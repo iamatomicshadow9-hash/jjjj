@@ -1,3 +1,4 @@
+
 """
 🚀 KOYEB PRODUCTION LAUNCHER - МАКСИМАЛЬНАЯ ВЕРСИЯ
 Профессиональный запускатель для облачного хостинга с полным мониторингом
@@ -72,6 +73,8 @@ class KoyebConfig:
     ENV_VARS = {
         "PYTHONUNBUFFERED": "1",  # Отключаем буферизацию для логов
         "PORT": str(WEB_PORT),
+        # Маркер того, что процесс запущен менеджером Koyeb
+        "RUN_BY_KOYEB_LAUNCHER": "1",
     }
     
     # Цвета (ANSI коды работают в большинстве облачных логов)
@@ -395,9 +398,19 @@ class HealthCheckServer:
         self.running = True
         
         def run_server():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.start_server())
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self.start_server())
+            except OSError as e:
+                # Порт может быть занят — логируем и корректно завершаем поток
+                self.logger.error(f"Health server failed to start: {e}", "HEALTH")
+                self.metrics.record_error(str(e), "HEALTH")
+                self.running = False
+            except Exception as e:
+                self.logger.error(f"Unexpected error in health server: {e}", "HEALTH")
+                self.metrics.record_error(str(e), "HEALTH")
+                self.running = False
         
         self.server_thread = threading.Thread(target=run_server, daemon=True)
         self.server_thread.start()

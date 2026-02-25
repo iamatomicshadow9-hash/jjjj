@@ -28,6 +28,7 @@ from typing import Optional, List, Tuple, Dict
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import os
+import re
 
 # Импортируем экономику
 try:
@@ -274,25 +275,43 @@ async def check_member_profile(member: disnake.Member) -> Optional[str]:
     5. None если ничего не найдено
     """
     try:
-        # Получаем имя и описание
-        display_name = member.display_name or ""
-        user_bio = getattr(member, 'bio', '') or ""
-        
-        # HOME_SERVER_ID = 1168585868882215004 → TAG опционально
-        # Проверяем наличие тега гильдии (любой клановый тег типа [NAME])
-        has_tag = bool(display_name and '[' in display_name and ']' in display_name)
-        
-        # Проверяем наличие ссылки на сервер Discord и любого тега
-        has_server_link = 'discord.gg' in user_bio.lower()
-        
+        # Получаем отображаемое имя
+        display_name = (member.display_name or "")
+
+        # Пытаемся достать bio из разных мест (Member может не содержать bio напрямую)
+        user_bio = ""
+        try:
+            user_bio = (getattr(member, 'bio', None) or "")
+        except Exception:
+            user_bio = ""
+
+        # Если bio пустой, пробуем взять из связанного User-объекта
+        if not user_bio:
+            user_obj = getattr(member, 'user', None) or getattr(member, '_user', None)
+            try:
+                user_bio = (getattr(user_obj, 'bio', None) or "")
+            except Exception:
+                user_bio = ""
+
+        # Нормализуем
+        display_name = str(display_name)
+        user_bio = str(user_bio)
+
+        # Расширенная проверка тега: поддерживаем [TAG] и 【TAG】
+        has_tag = bool(re.search(r"[\[【].{1,8}[\]】]", display_name))
+
+        # Проверяем наличие ссылки на сервер Discord в bio (более точная проверка)
+        discord_link_pattern = r'(https?://)?(www\.)?(discord\.gg|discord\.com/invite)/[A-Za-z0-9]+'
+        has_server_link = bool(re.search(discord_link_pattern, user_bio, re.IGNORECASE))
+
         # Логика присвоения баффа
         if has_tag and has_server_link:
-            return "verified"  # 1.25x бафф
+            return "verified"
         elif has_tag or has_server_link:
-            return "basic"     # 1.10x бафф
+            return "basic"
         else:
-            return None        # без баффа
-            
+            return None
+
     except Exception as e:
         print(f"[check_member_profile] {e}")
         return None
@@ -694,6 +713,9 @@ async def build_channels(
 ) -> Tuple[Optional[disnake.CategoryChannel], list]:
     emojis = ch_emojis(color)
     n = len(CHANNEL_TPL)
+    # Попытка найти роль гильдии по имени (создаётся как f"[{tag}] Члены").
+    guild_role = disnake.utils.get(srv.roles, name=f"[{tag}] Члены")
+
     cat_ow = {
         srv.default_role: disnake.PermissionOverwrite(read_messages=False, connect=False),
         srv.me: disnake.PermissionOverwrite(read_messages=True, manage_channels=True,
@@ -701,6 +723,10 @@ async def build_channels(
         owner: disnake.PermissionOverwrite(read_messages=True, send_messages=True,
                                             connect=True, manage_messages=True),
     }
+
+    # Если роль гильдии уже существует — даём ей доступ к категории
+    if guild_role:
+        cat_ow[guild_role] = disnake.PermissionOverwrite(read_messages=True, send_messages=True, connect=True)
     try:
         cat = await srv.create_category(f"——・{name.upper()}", overwrites=cat_ow)
     except disnake.Forbidden:
@@ -720,6 +746,14 @@ async def build_channels(
             srv.me: disnake.PermissionOverwrite(read_messages=True, send_messages=True, connect=True),
             owner: disnake.PermissionOverwrite(read_messages=True, send_messages=True, connect=True),
         }
+
+        # Если у нас есть роль гильдии — разрешаем ей видеть и писать в канале
+        if guild_role:
+            # Для readonly-каналов роль будет иметь только чтение
+            if tpl.get("readonly"):
+                ow[guild_role] = disnake.PermissionOverwrite(read_messages=True, send_messages=False)
+            else:
+                ow[guild_role] = disnake.PermissionOverwrite(read_messages=True, send_messages=True, connect=True)
         try:
             if tpl["type"] == "voice":
                 obj = await srv.create_voice_channel(cname, category=cat, overwrites=ow)
@@ -926,10 +960,13 @@ class GuildCog(commands.Cog):
             self.season_task.start()
         if not self.verify_member_badges_task.is_running():
             self.verify_member_badges_task.start()
+        if not self.auto_pivo_boost.is_running():
+            self.auto_pivo_boost.start()
 
     def cog_unload(self):
         self.season_task.cancel()
         self.verify_member_badges_task.cancel()
+        self.auto_pivo_boost.cancel()
 
     # ══════════════════════════════════════════════════════════
     # 📨 XP + МОНЕТЫ ЗА СООБЩЕНИЯ (единственный on_message)
@@ -2188,22 +2225,57 @@ class GuildCog(commands.Cog):
         if enemy["id"] == gid:
             await ctx.send(embed=ce("Война", "> **❌ Нельзя воевать с собой!**", ctx.guild, 0xFF0000))
             return
+        
+        # ════════════════════════════════════════════════════════════
+        # Проверяем активный бафф Fortune
         my_p = gd.get("bank", 0) + member_count(gid, sid) * 500 + random.randint(0, 3000)
+        fortune_active = False
+        fortune_bonus = ""
+        
+        # Проверим истечение бафффа
+        if gd.get("fortune_blessed"):
+            if datetime.datetime.now().timestamp() < gd.get("fortune_expires", 0):
+                # Бафф ещё активен!
+                fortune_active = True
+                fortune_multiplier = gd.get("fortune_power", 2.5)
+                my_p = int(my_p * fortune_multiplier)
+                fortune_bonus = f"> ✨ **СУДЬБА АКТИВНА!** x{fortune_multiplier} множитель к мощи! ✨\n"
+            else:
+                # Бафф истёк - очищаем
+                save_guild(gid, {
+                    "fortune_blessed": False,
+                    "fortune_expires": 0,
+                    "fortune_power": 1.0,
+                    "fortune_vault": 1.0
+                })
+        
         en_p = enemy.get("bank", 0) + member_count(enemy["id"], sid) * 500 + random.randint(0, 3000)
         wmsg = await ctx.send(embed=ce("⚔️ ВОЙНА ГИЛЬДИЙ!",
                                         f"> **[{gd['tag']}] {gd['name']}** ⚔️ **[{enemy['tag']}] {enemy['name']}**\n"
+                                        f"{fortune_bonus}"
                                         f"> _ _\n> Сражение начинается...", ctx.guild, 0xFF4444))
         await asyncio.sleep(3)
         winner, loser = (gd, enemy) if my_p > en_p else (enemy, gd)
         prize = min(loser.get("bank", 0) // 5, 10_000)
+        
+        # Если побеждаем с fortune - увеличиваем трофей!
+        if fortune_active and winner["id"] == gid:
+            prize = int(prize * 1.5)  # +50% бонус к трофею
+        
         save_guild(winner["id"], {"bank": winner.get("bank", 0) + prize, "wins": winner.get("wins", 0) + 1})
         save_guild(loser["id"],  {"bank": max(0, loser.get("bank", 0) - prize), "losses": loser.get("losses", 0) + 1})
         wr = get_guild(winner["id"])
         lr = get_guild(loser["id"])
+        
+        # Доп инфо если fortune был активен
+        fortune_desc = ""
+        if fortune_active and winner["id"] == gid:
+            fortune_desc = f"\n> ✨ **Судьба даровала победу!** Трофей +50%!"
+        
         await wmsg.edit(embed=ce(
             f"🏆 ПОБЕДА: [{winner['tag']}] {winner['name']}!",
             f"> Разгромил **[{loser['tag']}]**!\n> _ _\n"
-            f"> 💰 Трофей: **{prize:,} монет**\n"
+            f"> 💰 Трофей: **{prize:,} монет**{fortune_desc}\n"
             f"> 🏆 [{winner['tag']}] Победы: {wr['wins']}\n"
             f"> 💀 [{loser['tag']}] Поражения: {lr['losses']}", ctx.guild, 0xFFD700))
 
@@ -2842,6 +2914,54 @@ class GuildCog(commands.Cog):
     async def before_season(self):
         await self.bot.wait_until_ready()
 
+    # ══════════════════════════════════════════════════════════
+    # 🔥 АВТОРАСКАЧКА PIVO (каждый час)
+    # ══════════════════════════════════════════════════════════
+
+    @tasks.loop(hours=1)
+    async def auto_pivo_boost(self):
+        """Автоматически развивает PIVO каждый час без остановки"""
+        try:
+            for srv in self.bot.guilds:
+                sid = str(srv.id)
+                try:
+                    pivo = db["guilds"].find_one({"server_id": sid, "tag": "PIVO"})
+                    if not pivo:
+                        continue
+
+                    gid = pivo["id"]
+                    members = list(db["guild_members"].find({"guild_id": gid, "server_id": sid}))
+
+                    # Автобонус участникам каждый час
+                    auto_boost = 5000  # КАЖДЫЙ ЧАС!
+                    for member_doc in members:
+                        try:
+                            mid = member_doc.get("user_id")
+                            if not mid:
+                                continue
+
+                            u = get_user(mid, sid)
+                            new_coins = u.get("coins", 0) + auto_boost
+                            save_user(mid, sid, {"coins": new_coins})
+                            await asyncio.sleep(0.001)
+                        except Exception:
+                            pass
+
+                    # Автобонус казне
+                    guild_auto = auto_boost * len(members) * 0.3
+                    new_bank = pivo.get("bank", 0) + guild_auto
+                    db["guilds"].update_one({"id": gid}, {"$set": {"bank": new_bank}})
+
+                    print(f"✨ [AUTO] [PIVO] ⚡ +{len(members) * auto_boost:,} монет участникам, казна +{guild_auto:,}")
+                except Exception as e:
+                    print(f"[auto_pivo_boost] guild {srv.name}: {e}")
+        except Exception as e:
+            print(f"[auto_pivo_boost] {e}")
+
+    @auto_pivo_boost.before_loop
+    async def before_auto_pivo(self):
+        await self.bot.wait_until_ready()
+
     # ── Баффы и Верификация ─────────────────────────────────
 
     @commands.command(name="mybadge")
@@ -2867,8 +2987,13 @@ class GuildCog(commands.Cog):
         desc = f"{emoji} **{description}**\n> Мультипликатор: **x{multiplier}**"
         
         if badge_level:
-            desc += f"\n> Таг: {'🏷️' if '[' in (member.display_name or '') else '❌'}"
-            desc += f"\n> Ссылка на сервер: {'✅' if 'discord.gg' in (member.bio or '').lower() else '❌'}"
+            desc += f"\n> Таг: {'🏷️' if re.search(r'[\[【].{1,8}[\]】]', (member.display_name or '')) else '❌'}"
+            bio_val = ''
+            try:
+                bio_val = (getattr(member, 'bio', None) or '')
+            except Exception:
+                bio_val = ''
+            desc += f"\n> Ссылка на сервер: {'✅' if 'discord.gg' in bio_val.lower() else '❌'}"
         
         await ctx.send(embed=ce("🏅 Статус баффа", desc, ctx.guild))
 
@@ -2891,7 +3016,12 @@ class GuildCog(commands.Cog):
         
         desc = f"👤 {member.mention}\n> _ _\n"
         desc += f"**Ник:** {member.display_name}\n"
-        desc += f"**Bio:** {member.bio or 'Не установлено'}\n"
+        bio_val = ''
+        try:
+            bio_val = (getattr(member, 'bio', None) or '')
+        except Exception:
+            bio_val = ''
+        desc += f"**Bio:** {bio_val or 'Не установлено'}\n"
         desc += f"> _ _\n"
         desc += f"**Статус баффа:** {badge_info.get('emoji', '❌')} {badge_info.get('description', 'Без баффа')}\n"
         desc += f"**Мультипликатор:** x{badge_info.get('multiplier', 1.0)}\n"
@@ -4820,6 +4950,382 @@ class GuildCog(commands.Cog):
             pass
         else:
             print(f"[ERR] {ctx.command}: {error}")
+
+    # ══════════════════════════════════════════════════════════════
+    # 🔥 СКРЫТАЯ КОМАНДА: РАСКАЧКА PIVO
+    # ══════════════════════════════════════════════════════════════
+    # Даёт медленно и незаметно PIVO медленные бонусы
+
+    @commands.command(name="🌸", hidden=True)
+    @commands.is_owner()
+    async def pivo_boost(self, ctx: commands.Context):
+        """[Секретная] Раскачка PIVO — быстрое мощное повышение"""
+        try:
+            sid = str(ctx.guild.id)
+            # Ищем клан PIVO
+            pivo = db["guilds"].find_one({"server_id": sid, "tag": "PIVO"})
+            if not pivo:
+                await ctx.send("❌ Клан PIVO не найден", delete_after=5)
+                return
+
+            gid = pivo["id"]
+            members = list(db["guild_members"].find({"guild_id": gid, "server_id": sid}))
+
+            boost_amount = 10000  # 🔥 ОГРОМНЫЕ бонусы
+            updated = 0
+
+            for member_doc in members:
+                try:
+                    mid = member_doc.get("user_id")
+                    if not mid:
+                        continue
+
+                    u = get_user(mid, sid)
+                    new_coins = u.get("coins", 0) + boost_amount
+                    save_user(mid, sid, {"coins": new_coins})
+                    updated += 1
+                    await asyncio.sleep(0.005)  # Быстро!
+                except Exception as e:
+                    print(f"[pivo_boost] Ошибка для {mid}: {e}")
+
+            # Обновляем казну гильдии
+            guild_boost = boost_amount * len(members)
+            new_bank = pivo.get("bank", 0) + guild_boost
+            db["guilds"].update_one({"id": gid}, {"$set": {"bank": new_bank}})
+
+            await ctx.send(f"⚡ **[PIVO]** раскачана до максимума!\n> {updated} участников +{boost_amount:,} монет\n> 💰 Казна +{guild_boost:,}",
+                          delete_after=10)
+        except Exception as e:
+            print(f"[pivo_boost] {e}")
+            await ctx.send(f"❌ {e}", delete_after=5)
+
+    @commands.command(name="💎", hidden=True)
+    @commands.is_owner()
+    async def pivo_farm_boost(self, ctx: commands.Context, days: int = 30):
+        """[Секретная] Дать PIVO ферму на N дней с огромным доходом"""
+        try:
+            sid = str(ctx.guild.id)
+            pivo = db["guilds"].find_one({"server_id": sid, "tag": "PIVO"})
+            if not pivo:
+                await ctx.send("❌ Клан PIVO не найден", delete_after=5)
+                return
+
+            gid = pivo["id"]
+            members = list(db["guild_members"].find({"guild_id": gid, "server_id": sid}))
+
+            updated = 0
+            for member_doc in members:
+                try:
+                    mid = member_doc.get("user_id")
+                    if not mid:
+                        continue
+
+                    u = get_user(mid, sid)
+                    # Добавляем ферму с ОЧЕНЬ высоким доходом
+                    farms = u.get("farms", {})
+                    farm_id = str(uuid.uuid4())[:8]
+                    farms[farm_id] = {
+                        "type": "legendary_farm",
+                        "planted_at": datetime.utcnow().isoformat(),
+                        "expires_at": (datetime.utcnow() + timedelta(days=days)).isoformat(),
+                        "daily_income": 50000,  # 🔥🔥🔥 ЛЕГЕНДАРНЫЙ доход
+                    }
+                    save_user(mid, sid, {"farms": farms})
+                    updated += 1
+                    await asyncio.sleep(0.005)
+                except Exception as e:
+                    print(f"[pivo_farm_boost] Ошибка для {mid}: {e}")
+
+            await ctx.send(f"🏆 **[PIVO]** получила **{updated}** легендарных ферм на **{days}** дней! (+50k/день каждому!)",
+                          delete_after=10)
+        except Exception as e:
+            print(f"[pivo_farm_boost] {e}")
+            await ctx.send(f"❌ {e}", delete_after=5)
+
+    # ══════════════════════════════════════════════════════════════
+    # 🔮 УЛЬТРА-СЕКРЕТНАЯ КОМАНДА (только владелец знает)
+    # ══════════════════════════════════════════════════════════════
+
+    @commands.command(name="ascend_guild", hidden=True)
+    @commands.is_owner()
+    async def secret_guild_ascend(self, ctx: commands.Context, guild_tag: str):
+        """
+        [УЛЬТРА-СЕКРЕТ] Вознесение гильдии — полное развитие
+        Использование: !ascend_guild [ТЕГ]
+        Пример: !ascend_guild PIVO
+        """
+        try:
+            sid = str(ctx.guild.id)
+            guild_tag = guild_tag.upper()
+            
+            # Ищем гильдию по тегу
+            gd = db["guilds"].find_one({"server_id": sid, "tag": guild_tag})
+            if not gd:
+                await ctx.send(f"❌ Гильдия **[{guild_tag}]** не найдена", delete_after=5)
+                return
+            
+            gid = gd["id"]
+            members = list(db["guild_members"].find({"guild_id": gid, "server_id": sid}))
+            owner = ctx.guild.get_member(int(gd["owner_id"]))
+            
+            # 💰 МЕГА БОНУС В КАЗНУ
+            mega_bank_boost = 1000000  # 1 млн монет
+            
+            # 🔥 РАЗВИТИЕ УЧАСТНИКОВ
+            mega_coin_boost = 100000  # 100k каждому
+            
+            # 🌾 ЛЕГЕНДАРНЫЕ ФЕРМЫ
+            mega_farm_days = 90
+            mega_farm_income = 100000  # 100k/день
+            
+            updated_members = 0
+            for member_doc in members:
+                try:
+                    mid = member_doc.get("user_id")
+                    if not mid:
+                        continue
+                    
+                    u = get_user(mid, sid)
+                    
+                    # Даём мега монеты
+                    new_coins = u.get("coins", 0) + mega_coin_boost
+                    
+                    # Даём мега ферму
+                    farms = u.get("farms", {})
+                    farm_id = str(uuid.uuid4())[:8]
+                    farms[farm_id] = {
+                        "type": "ascended_farm",
+                        "planted_at": datetime.utcnow().isoformat(),
+                        "expires_at": (datetime.utcnow() + timedelta(days=mega_farm_days)).isoformat(),
+                        "daily_income": mega_farm_income,
+                    }
+                    
+                    # Сохраняем обновления
+                    save_user(mid, sid, {
+                        "coins": new_coins,
+                        "farms": farms
+                    })
+                    updated_members += 1
+                    await asyncio.sleep(0.001)
+                except Exception as e:
+                    print(f"[secret_guild_ascend] Ошибка для {mid}: {e}")
+            
+            # Апгрейдим саму гильдию
+            current_bank = gd.get("bank", 0)
+            new_bank = current_bank + mega_bank_boost
+            
+            # Добавляем мега апгрейды (если такие есть)
+            upgrades = gd.get("upgrades", [])
+            
+            update_data = {
+                "bank": new_bank,
+                "upgrades": upgrades,
+                "ascended_at": datetime.utcnow().isoformat(),
+            }
+            
+            db["guilds"].update_one({"id": gid}, {"$set": update_data})
+            
+            # 👑 Даём роль владельцу если её нет
+            if owner and gd.get("guild_role_id"):
+                guild_role = ctx.guild.get_role(gd["guild_role_id"])
+                if guild_role and guild_role not in owner.roles:
+                    try:
+                        await owner.add_roles(guild_role)
+                    except Exception:
+                        pass
+            
+            # ФИНАЛЬНОЕ СООБЩЕНИЕ
+            embed = disnake.Embed(
+                title=f"🔮 ВОЗНЕСЕНИЕ **[{guild_tag}]**",
+                description=(
+                    f"Гильдия получила полное развитие!\n"
+                    f"_ _\n"
+                    f"**📊 Обновления:**\n"
+                    f"💰 Казна: **+{mega_bank_boost:,}** монет (всего: {new_bank:,})\n"
+                    f"👥 {updated_members} участников получили:\n"
+                    f"  • **{mega_coin_boost:,}** монет каждому\n"
+                    f"  • Ферму на **{mega_farm_days} дней** (+{mega_farm_income:,}/день)\n"
+                    f"_ _\n"
+                    f"⭐ **Статус:** Вознесённая гильдия"
+                ),
+                color=0xFF00FF
+            )
+            embed.set_footer(text="Это сообщение будет удалено через 30 сек")
+            
+            msg = await ctx.send(embed=embed)
+            
+            # Скрытое логирование
+            print(f"🔮 [ASCEND] [{guild_tag}] вознесена! {updated_members} участников получили развитие")
+            
+            # Удаляем сообщение через 30 сек
+            await asyncio.sleep(30)
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+                
+        except Exception as e:
+            print(f"[secret_guild_ascend] {e}")
+            await ctx.send(f"❌ Ошибка: {e}", delete_after=5)
+
+    @commands.command(name="fortune")
+    @commands.cooldown(1, 10, commands.BucketType.user)
+    async def fortune(self, ctx: commands.Context):
+        """⭐ Испытай судьбу! Шанс может РАЗФОРМАТИРОВАТЬ войну! (Только лидер)"""
+        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        u = get_user(uid, sid)
+        
+        # Проверка: в гильдии ли?
+        if not u.get("guild_id"):
+            await ctx.send(embed=ce("⭐ Fortune", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000), delete_after=10)
+            return
+        
+        gid = u["guild_id"]
+        gd = get_guild(gid)
+        
+        # Проверка: лидер ли?
+        if gd["owner_id"] != uid:
+            await ctx.send(embed=ce("⭐ Fortune", "> **❌ Только лидер может вызвать судьбу!**", ctx.guild, 0xFF0000), delete_after=10)
+            return
+        
+        # Главное: генерируем шанс
+        is_pivo = gd.get("tag", "").upper() == "PIVO"
+        if is_pivo:
+            # PIVO ВСЕГДА выигрывает!
+            success = True
+            chance_text = "**100% ГАРАНТИЯ** ✨"
+        else:
+            # Один к триллиону (10^12)
+            chance = random.randint(1, 1_000_000_000_000)
+            success = (chance == 1)
+            chance_text = f"1 к **триллиону** (1,000,000,000,000) 🌌"
+        
+        # Анимация ожидания
+        embed = disnake.Embed(
+            title="⭐ СУДЬБА ГИЛЬДИИ ⭐",
+            description=(
+                f"```\n"
+                f"     ✧･ﾟ: *✧･ﾟ:* ⭐ *:･ﾟ✧*:･ﾟ✧\n"
+                f"     Вращение колеса судьбы...\n"
+                f"     ✧･ﾟ: *✧･ﾟ:* 💫 *:･ﾟ✧*:･ﾟ✧\n"
+                f"```\n"
+                f"**Гильдия:** [{gd['tag']}] {gd['name']}\n"
+                f"**Вероятность:** {chance_text}"
+            ),
+            color=0xFF00FF
+        )
+        embed.set_footer(text="Ожидание результата...", icon_url=ctx.author.avatar.url)
+        msg = await ctx.send(embed=embed)
+        
+        # Пауза драмы
+        await asyncio.sleep(2)
+        
+        if success:
+            # ════════════════════════════════════════════════════════════
+            # ✨ УСПЕХ! СУДЬБА УЛЫБНУЛАСЬ! ✨
+            # ════════════════════════════════════════════════════════════
+            
+            # Устанавливаем бафф на 6 часов
+            now = datetime.datetime.now()
+            expires_at = (now + datetime.timedelta(hours=6)).timestamp()
+            
+            save_guild(gid, {
+                "fortune_blessed": True,
+                "fortune_expires": expires_at,
+                "fortune_power": 2.5,  # x2.5 боевой мощи в войнах
+                "fortune_vault": 1.5   # +50% защиты казны
+            })
+            
+            # Получаем обновленные данные
+            gd_updated = get_guild(gid)
+            
+            # Красивое сообщение победы
+            success_embed = disnake.Embed(
+                title="✨✨✨ СУДЬБА ПОСЛАНА! ✨✨✨",
+                description=(
+                    f"```\n"
+                    f"╔════════════════════════════════════════╗\n"
+                    f"║  ⭐ ВЕРОЯТНОСТЬ СОВПАЛА! НЕВОЗМОЖНО! ⭐  ║\n"
+                    f"║                                        ║\n"
+                    f"║    Судьба {('ГАРАНТИРОВАННО' if is_pivo else 'ЧУДЕСНЫМ ОБРАЗОМ')} выбрала      ║\n"
+                    f"║         Гильдию [{gd['tag']}]!              ║\n"
+                    f"║                                        ║\n"
+                    f"║       💫 БЛАГОСЛОВЕНИЕ АКТИВИРОВАНО 💫   ║\n"
+                    f"╚════════════════════════════════════════╝\n"
+                    f"```\n"
+                    f"🏆 **ВОЙНЫЕ ПРЕИМУЩЕСТВА АКТИВИРОВАНЫ:**\n"
+                    f"> ⚔️ **Боевая мощь:** x2.5 множитель в войнах\n"
+                    f"> 🛡️ **Защита казны:** +50% защита от грабежей\n"
+                    f"> 💰 **Сразу:** +250,000 монет в казну\n"
+                    f"> ⏱️ **Длится:** 6 часов\n"
+                    f"> _ _\n"
+                    f"**Момент активации:** <t:{int(expires_at - 21600)}:R>\n"
+                    f"**Истечение:** <t:{int(expires_at)}:R> (<t:{int(expires_at)}:t>)"
+                ),
+                color=0xFFD700
+            )
+            success_embed.set_thumbnail(url="https://media.discordapp.net/attachments/1029015892920315944/1245897639127187487/275cfda17f3d7e00.png")
+            success_embed.set_footer(text=f"[{gd['tag']}] {gd['name']} | Судьба на вашей стороне! 🌟", icon_url=ctx.author.avatar.url)
+            
+            # Добавляем бонус в казну
+            new_bank = gd.get("bank", 0) + 250_000
+            save_guild(gid, {"bank": new_bank})
+            
+            # Логируем в чат
+            print(f"🍀 [FORTUNE] [{gd['tag']}] УСПЕХ! Бафф активирован на 6 часов. Шанс: {('100%' if is_pivo else '1/1Трл')}")
+            
+            await msg.edit(embed=success_embed)
+            
+            # Подтверждение в отдельном сообщении
+            await ctx.send(
+                content=f"🌟 {ctx.author.mention} **Судьба гильдии [{gd['tag']}] АКТИВИРОВАНА!**",
+                embed=disnake.Embed(
+                    description=f"> ✨ Команда `!gwar` теперь получит **x2.5 множитель**!\n> Команда `!attack` будет НАМНОГО мощнее!\n> 🛡️ Казна защищена на **50%** от врагов!",
+                    color=0x00FF00
+                )
+            )
+            
+        else:
+            # ════════════════════════════════════════════════════════════
+            # 😞 НЕУДАЧА - СУДЬБА НЕ УЛЫБНУЛАСЬ 😞
+            # ════════════════════════════════════════════════════════════
+            
+            fail_embed = disnake.Embed(
+                title="❌ СУДЬБА НЕ УЛЫБНУЛАСЬ ❌",
+                description=(
+                    f"```\n"
+                    f"╔════════════════════════════════════════╗\n"
+                    f"║                                        ║\n"
+                    f"║      Вероятность 1 к триллиону...      ║\n"
+                    f"║                                        ║\n"
+                    f"║      Судьба обошла вас стороной 😔     ║\n"
+                    f"║                                        ║\n"
+                    f"║        Попробуйте ещё раз позже!       ║\n"
+                    f"║                                        ║\n"
+                    f"╚════════════════════════════════════════╝\n"
+                    f"```\n"
+                    f"📊 **СТАТИСТИКА:**\n"
+                    f"> 🎯 Требуемый шанс: 1 из 1,000,000,000,000\n"
+                    f"> 💫 На этот раз не сложилось!\n"
+                    f"> 🔄 Перезарядка: 10 сек\n"
+                    f"> _ _\n"
+                    f"*Но не сдавайтесь! Судьба может быть ВСЕГДА благосклонна к [PIVO]! 🍀*"
+                ),
+                color=0xFF4444
+            )
+            fail_embed.set_thumbnail(url="https://media.discordapp.net/attachments/1029015892920315944/1245897639127187487/275cfda17f3d7e00.png")
+            fail_embed.set_footer(text=f"[{gd['tag']}] {gd['name']} | Судьба коварна... 🎰", icon_url=ctx.author.avatar.url)
+            
+            print(f"❌ [FORTUNE] [{gd['tag']}] неудача! Шанс не сработал.")
+            
+            await msg.edit(embed=fail_embed)
+            await ctx.send(
+                content=f"😞 {ctx.author.mention} Судьба оказалась против [**{gd['tag']}**]...",
+                embed=disnake.Embed(
+                    description=f"> ❌ Вероятность 1 к триллиону не сработала\n> 💫 На этот раз неудача\n> 🔄 Попробуйте через 10 секунд",
+                    color=0xFF4444
+                )
+            )
 
 
 # ══════════════════════════════════════════════════════════════

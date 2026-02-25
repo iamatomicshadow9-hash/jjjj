@@ -2621,89 +2621,6 @@ class GuildCog(commands.Cog):
             await rebuild(inter.guild, gd, owner)
         await msg.edit(embed=ce("✅ Готово!", f"> {len(gs_list)} гильдий пересозданы!", inter.guild))
 
-    @commands.slash_command(description="Команда gforcecolor")
-    @is_admin()
-    async def gforcecolor(self, inter: disnake.AppCommandInteraction, tag: str, color: str):
-        sid = str(inter.guild.id)
-        gd  = guild_by_tag(sid, tag)
-        if not gd:
-            await inter.response.send_message(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", inter.guild, 0xFF0000))
-            return
-        if color.lower() not in COLORS:
-            await inter.response.send_message(embed=ce("Admin", f"> **❌ Цвет `{color}` не найден!**", inter.guild, 0xFF0000))
-            return
-        gd["color"] = color.lower()
-        save_guild(gd["id"], {"color": color.lower()})
-        owner = inter.guild.get_member(int(gd["owner_id"])) or inter.author
-        msg = await inter.response.send_message(embed=ce("⏳", f"> Меняю цвет **[{gd['tag']}]**...", inter.guild))
-        await rebuild(inter.guild, gd, owner)
-        await msg.edit(embed=ce("✅", f"> **[{gd['tag']}]** → {COLORS[color.lower()]['label']}!",
-                                 inter.guild, COLORS[color.lower()]["hex"]))
-
-    @commands.slash_command(description="Команда gforcedelete")
-    @is_admin()
-    async def gforcedelete(self, inter: disnake.AppCommandInteraction, *, tag: str):
-        sid = str(inter.guild.id)
-        gd  = guild_by_tag(sid, tag)
-        if not gd:
-            await inter.response.send_message(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", inter.guild, 0xFF0000))
-            return
-        await self._dissolve_guild(inter.guild, gd, sid)
-        await inter.response.send_message(embed=ce("✅", f"> **[{gd['tag']}] {gd['name']}** удалена.", inter.guild))
-
-    @commands.slash_command(description="Команда gforcekick")
-    @is_admin()
-    async def gforcekick(self, inter: disnake.AppCommandInteraction, member: disnake.Member):
-        uid, sid = str(member.id), str(inter.guild.id)
-        u = get_user(uid, sid)
-        if not u.get("guild_id"):
-            await inter.response.send_message(embed=ce("Admin", f"> **❌ {member.display_name} не в гильдии!**",
-                                     inter.guild, 0xFF0000))
-            return
-        gid = u["guild_id"]
-        gd  = get_guild(gid)
-        if gd:
-            officers = gd.get("officers", [])
-            if uid in officers:
-                officers.remove(uid)
-                save_guild(gid, {"officers": officers})
-        save_user(uid, sid, {"guild_id": None, "guild_rank": None})
-        if gd:
-            await refresh_access(inter.guild, gd, member, remove=True)
-        try:
-            if member.display_name.startswith("["):
-                clean = member.display_name.split("]", 1)[1].strip()
-                await member.edit(nick=clean or None)
-        except Exception:
-            pass
-        await inter.response.send_message(embed=ce("👢 Force Kick",
-                                 f"> {member.mention} принудительно исключён(а).", inter.guild, 0xFF4444))
-
-    @commands.slash_command(description="Команда gforcejoin")
-    @is_admin()
-    async def gforcejoin(self, inter: disnake.AppCommandInteraction, member: disnake.Member, *, tag: str):
-        uid, sid = str(member.id), str(inter.guild.id)
-        gd = guild_by_tag(sid, tag)
-        if not gd:
-            await inter.response.send_message(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", inter.guild, 0xFF0000))
-            return
-        u = get_user(uid, sid)
-        if u.get("guild_id"):
-            await inter.response.send_message(embed=ce("Admin", f"> **❌ {member.display_name} уже в гильдии!**",
-                                     inter.guild, 0xFF0000))
-            return
-        save_user(uid, sid, {"guild_id": gd["id"], "guild_rank": "member"})
-        await refresh_access(inter.guild, gd, member)
-        try:
-            old = member.display_name
-            if old.startswith("[") and "]" in old:
-                old = old.split("]", 1)[1].strip()
-            await member.edit(nick=f"[{gd['tag']}] {old}"[:32])
-        except Exception:
-            pass
-        await inter.response.send_message(embed=ce("✅ Force Join",
-                                 f"> {member.mention} добавлен(а) в **[{gd['tag']}]**.", inter.guild))
-
     @commands.slash_command(description="Команда gsetowner")
     @is_admin()
     async def gsetowner(self, inter: disnake.AppCommandInteraction, member: disnake.Member, *, tag: str):
@@ -2771,38 +2688,11 @@ class GuildCog(commands.Cog):
         db["users"].delete_one({"user_id": str(member.id), "server_id": str(inter.guild.id)})
         await inter.response.send_message(embed=ce("Admin", f"> Данные {member.mention} сброшены.", inter.guild))
 
-    @commands.slash_command(description="Команда glistall")
-    @is_admin()
-    async def glistall(self, inter: disnake.AppCommandInteraction):
-        sid = str(inter.guild.id)
-        try:
-            gs = list(db["guilds"].find({"server_id": sid}))
-        except Exception:
-            gs = []
-        if not gs:
-            await inter.response.send_message("> Гильдий нет.")
-            return
-        desc = "".join(f"> **[{g['tag']}] {g['name']}** (ID:{g['id']})\n" for g in gs)
-        await inter.response.send_message(embed=ce("Все гильдии", desc, inter.guild))
-
     @commands.slash_command(description="Команда setmessages")
     @is_admin()
     async def setmessages(self, inter: disnake.AppCommandInteraction, member: disnake.Member, amount: int):
         save_user(str(member.id), str(inter.guild.id), {"messages": amount})
         await inter.response.send_message(embed=ce("📝", f"> {member.mention}: **{amount:,}** сообщений", inter.guild))
-
-    @commands.slash_command(description="Команда setxp")
-    @is_admin()
-    async def setxp(self, inter: disnake.AppCommandInteraction, member: disnake.Member, amount: int):
-        lvl = calc_level(amount)
-        save_user(str(member.id), str(inter.guild.id), {"xp": amount, "level": lvl})
-        await inter.response.send_message(embed=ce("⭐ XP", f"> {member.mention}: **{amount:,}** XP | ур. **{lvl}**", inter.guild))
-
-    @commands.slash_command(description="Команда gcleardata")
-    @is_admin()
-    async def gcleardata(self, inter: disnake.AppCommandInteraction, member: disnake.Member):
-        db["users"].delete_one({"user_id": str(member.id), "server_id": str(inter.guild.id)})
-        await inter.response.send_message(embed=ce("🗑️ Сброс", f"> Данные {member.mention} сброшены.", inter.guild, 0xFF4444))
 
     @commands.slash_command(description="Команда stats")
     @is_admin()
@@ -2820,12 +2710,6 @@ class GuildCog(commands.Cog):
                                  f"> ⭐ XP: **{sum(u.get('xp',0) for u in us_list):,}**\n"
                                  f"> 💬 Сообщений: **{sum(u.get('messages',0) for u in us_list):,}**",
                                  inter.guild))
-
-    @commands.slash_command(description="Команда gsetcalendar")
-    @is_admin()
-    async def gsetcalendar(self, inter: disnake.AppCommandInteraction, channel: disnake.TextChannel):
-        save_settings(str(inter.guild.id), {SEASON_CH_KEY: channel.id})
-        await inter.response.send_message(embed=ce("✅", f"> Анонсы → {channel.mention}", inter.guild))
 
     @commands.slash_command(description="Команда gsetmsg")
     @is_admin()

@@ -1,0 +1,16 @@
+disnake
+python-dotenv
+psutil
+Flask
+aiohttp
+pymongo
+aiohttp
+disnake
+pymongo[srv]
+python-dotenv
+aiohttp
+disnake
+Flask
+psutil
+pymongo[srv]
+python-dotenv

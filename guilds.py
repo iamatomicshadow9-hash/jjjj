@@ -845,7 +845,7 @@ async def rebuild(srv: disnake.Guild, gdata: dict, owner: disnake.Member):
 # ══════════════════════════════════════════════════════════════
 
 async def creation_dialog(ctx: commands.Context, bot: commands.Bot) -> Optional[dict]:
-    author = ctx.author
+    author = inter.author
 
     def dmcheck(m):
         return m.author.id == author.id and isinstance(m.channel, disnake.DMChannel)
@@ -860,13 +860,13 @@ async def creation_dialog(ctx: commands.Context, bot: commands.Bot) -> Optional[
                 "> **Шаг 1 / 4 ·** Введи **название** гильдии (2–30 символов):"
             ), color=0xFF69B4).set_author(name=EMBED_AUTHOR))
     except disnake.Forbidden:
-        await ctx.send(embed=ce("Ошибка",
+        await inter.response.send_message(embed=ce("Ошибка",
                                 "> **❌ Не могу написать в ЛС!** Разреши личные сообщения.",
-                                ctx.guild, 0xFF0000))
+                                inter.guild, 0xFF0000))
         return None
 
-    await ctx.send(embed=ce("🌸 Создание Гильдии",
-                             f"> {author.mention}, проверь **личные сообщения** 📬", ctx.guild))
+    await inter.response.send_message(embed=ce("🌸 Создание Гильдии",
+                             f"> {author.mention}, проверь **личные сообщения** 📬", inter.guild))
 
     async def step(prompt_embed=None) -> Optional[str]:
         if prompt_embed:
@@ -948,7 +948,7 @@ _page_store: dict = {}
 
 def is_admin():
     async def predicate(ctx):
-        return ctx.author.guild_permissions.administrator or ctx.author.id == 1187841298007330836
+        return inter.author.guild_permissions.administrator or inter.author.id == 1187841298007330836
     return commands.check(predicate)
 
 
@@ -1147,11 +1147,11 @@ class GuildCog(commands.Cog):
     # 💰 ЭКОНОМИКА
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="profile", aliases=["prof"])
+    @commands.slash_command(name="profile", description="Показать профиль игрока")
     @commands.cooldown(*COOLDOWNS["info_light"], commands.BucketType.user)
-    async def profile(self, ctx: commands.Context, member: disnake.Member = None):
-        target = member or ctx.author
-        uid, sid = str(target.id), str(ctx.guild.id)
+    async def profile(self, inter: disnake.AppCommandInteraction, member: disnake.Member = None):
+        target = member or inter.author
+        uid, sid = str(target.id), str(inter.guild.id)
         u = get_user(uid, sid)
         lvl = u.get("level", 1)
         xp  = u.get("xp", 0)
@@ -1178,26 +1178,26 @@ class GuildCog(commands.Cog):
                 f"> **🏰 Гильдия:** {g_line}\n"
                 f"> **🎖️ Ранг:** {rank_icon(u.get('guild_rank',''))} "
                 f"{(u.get('guild_rank') or '—').capitalize()}{msg_line}")
-        e = ce(f"👤 {target.display_name}", desc, ctx.guild)
+        e = ce(f"👤 {target.display_name}", desc, inter.guild)
         if target.display_avatar:
             e.set_thumbnail(url=target.display_avatar.url)
-        await ctx.send(embed=e)
+        await inter.response.send_message(embed=e)
 
-    @commands.command(name="balance", aliases=["bal", "coins"])
+    @commands.slash_command(name="balance", description="Показать баланс")
     @commands.cooldown(*COOLDOWNS["info_light"], commands.BucketType.user)
-    async def balance(self, ctx: commands.Context, member: disnake.Member = None):
-        t = member or ctx.author
-        u = get_user(str(t.id), str(ctx.guild.id))
-        await ctx.send(embed=ce("💰 Баланс",
+    async def balance(self, inter: disnake.AppCommandInteraction, member: disnake.Member = None):
+        t = member or inter.author
+        u = get_user(str(t.id), str(inter.guild.id))
+        await inter.response.send_message(embed=ce("💰 Баланс",
                                  f"> **{t.display_name}**\n> _ _\n"
                                  f"> 💰 **{u.get('coins',0):,}** монет\n"
                                  f"> ⭐ **{u.get('xp',0):,}** XP (ур. {u.get('level',1)})\n"
-                                 f"> 💬 **{u.get('messages',0):,}** сообщений", ctx.guild))
+                                 f"> 💬 **{u.get('messages',0):,}** сообщений", inter.guild))
 
-    @commands.command(name="daily")
+    @commands.slash_command(description="Получить ежедневный бонус")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def daily(self, ctx: commands.Context):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def daily(self, inter: disnake.AppCommandInteraction):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         now = datetime.utcnow()
         if u.get("daily_last"):
@@ -1207,23 +1207,23 @@ class GuildCog(commands.Cog):
                     rem = timedelta(hours=DAILY_COOLDOWN_H) - diff
                     h   = int(rem.total_seconds() // 3600)
                     m   = int((rem.total_seconds() % 3600) // 60)
-                    await ctx.send(embed=ce("Daily",
+                    await inter.response.send_message(embed=ce("Daily",
                                             f"> ⏰ Уже получил!\n> Следующий через: **{h}ч {m}м**",
-                                            ctx.guild, 0xFF8800))
+                                            inter.guild, 0xFF8800))
                     return
             except Exception:
                 pass
         bonus = DAILY_COINS + random.randint(0, 100)
         new_co = u.get("coins", 0) + bonus
         save_user(uid, sid, {"coins": new_co, "daily_last": now.isoformat()})
-        await ctx.send(embed=ce("🎁 Daily Bonus!",
-                                 f"> {ctx.author.mention} получил ежедневный бонус!\n> _ _\n"
-                                 f"> 💰 **+{bonus} монет**\n> _ _\n> Баланс: **{new_co:,}**", ctx.guild))
+        await inter.response.send_message(embed=ce("🎁 Daily Bonus!",
+                                 f"> {inter.author.mention} получил ежедневный бонус!\n> _ _\n"
+                                 f"> 💰 **+{bonus} монет**\n> _ _\n> Баланс: **{new_co:,}**", inter.guild))
 
-    @commands.command(name="work")
+    @commands.slash_command(description="Работа")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def work(self, ctx: commands.Context):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def work(self, inter: disnake.AppCommandInteraction):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         now = datetime.utcnow()
         if u.get("work_last"):
@@ -1232,8 +1232,8 @@ class GuildCog(commands.Cog):
                 if diff.total_seconds() < WORK_COOLDOWN_MIN * 60:
                     rem = timedelta(minutes=WORK_COOLDOWN_MIN) - diff
                     m   = int(rem.total_seconds() // 60)
-                    await ctx.send(embed=ce("Работа", f"> ⏰ Устал! Отдохни ещё **{m} мин.**",
-                                            ctx.guild, 0xFF8800))
+                    await inter.response.send_message(embed=ce("Работа", f"> ⏰ Устал! Отдохни ещё **{m} мин.**",
+                                            inter.guild, 0xFF8800))
                     return
             except Exception:
                 pass
@@ -1248,37 +1248,37 @@ class GuildCog(commands.Cog):
         earned = random.randint(mn, mx)
         new_co = u.get("coins", 0) + earned
         save_user(uid, sid, {"coins": new_co, "work_last": now.isoformat()})
-        await ctx.send(embed=ce("💼 Работа",
+        await inter.response.send_message(embed=ce("💼 Работа",
                                  f"> {job}\n> _ _\n> 💰 **+{earned} монет**\n> Баланс: **{new_co:,}**",
-                                 ctx.guild))
+                                 inter.guild))
 
-    @commands.command(name="pay")
+    @commands.slash_command(description="Перевести монеты")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def pay(self, ctx: commands.Context, member: disnake.Member, amount: int):
-        if member.id == ctx.author.id or member.bot:
-            await ctx.send(embed=ce("Перевод", "> **❌ Нельзя!**", ctx.guild, 0xFF0000))
+    async def pay(self, inter: disnake.AppCommandInteraction, member: disnake.Member, amount: int):
+        if member.id == inter.author.id or member.bot:
+            await inter.response.send_message(embed=ce("Перевод", "> **❌ Нельзя!**", inter.guild, 0xFF0000))
             return
         if amount <= 0:
-            await ctx.send(embed=ce("Перевод", "> **❌ Сумма > 0**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Перевод", "> **❌ Сумма > 0**", inter.guild, 0xFF0000))
             return
-        uid, tid, sid = str(ctx.author.id), str(member.id), str(ctx.guild.id)
+        uid, tid, sid = str(inter.author.id), str(member.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if u.get("coins", 0) < amount:
-            await ctx.send(embed=ce("Перевод",
+            await inter.response.send_message(embed=ce("Перевод",
                                      f"> **❌ Не хватает монет!** У тебя: **{u.get('coins',0):,}**",
-                                     ctx.guild, 0xFF0000))
+                                     inter.guild, 0xFF0000))
             return
         t = get_user(tid, sid)
         save_user(uid, sid, {"coins": u.get("coins", 0) - amount})
         save_user(tid, sid, {"coins": t.get("coins", 0) + amount})
-        await ctx.send(embed=ce("💸 Перевод",
-                                 f"> {ctx.author.mention} → {member.mention}\n> _ _\n> **{amount:,} монет**",
-                                 ctx.guild))
+        await inter.response.send_message(embed=ce("💸 Перевод",
+                                 f"> {inter.author.mention} → {member.mention}\n> _ _\n> **{amount:,} монет**",
+                                 inter.guild))
 
-    @commands.command(name="top", aliases=["leaderboard", "lb"])
+    @commands.slash_command(description="Топ игроков")
     @commands.cooldown(*COOLDOWNS["info_light"], commands.BucketType.user)
-    async def top(self, ctx: commands.Context):
-        sid = str(ctx.guild.id)
+    async def top(self, inter: disnake.AppCommandInteraction):
+        sid = str(inter.guild.id)
         try:
             us_docs = list(db["users"].find({"server_id": sid}).sort("xp", -1).limit(10))
         except Exception:
@@ -1286,34 +1286,34 @@ class GuildCog(commands.Cog):
         medals = ["🥇", "🥈", "🥉"]
         desc = ""
         for i, u in enumerate(us_docs, 1):
-            mo   = ctx.guild.get_member(int(u["user_id"]))
+            mo   = inter.guild.get_member(int(u["user_id"]))
             name = mo.display_name if mo else f"ID:{u['user_id']}"
             med  = medals[i - 1] if i <= 3 else f"`#{i}`"
             desc += f"> {med} **{name}** — ⭐ {u.get('xp',0):,} XP 💰 {u.get('coins',0):,}\n"
-        await ctx.send(embed=ce("🏆 Топ по XP", desc or "> Пока нет данных", ctx.guild))
+        await inter.response.send_message(embed=ce("🏆 Топ по XP", desc or "> Пока нет данных", inter.guild))
 
     # ══════════════════════════════════════════════════════════
     # 🏰 ГИЛЬДИИ
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="gcreate")
+    @commands.slash_command(description="Создать гильдию")
     @commands.cooldown(*COOLDOWNS["guild_heavy"], commands.BucketType.user)
-    async def gcreate(self, ctx: commands.Context):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gcreate(self, inter: disnake.AppCommandInteraction):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         msg_req = get_msg_required(sid)
         if u.get("guild_id"):
-            await ctx.send(embed=ce("Создание",
+            await inter.response.send_message(embed=ce("Создание",
                                      "> **❌ Ты уже в гильдии!** Выйди через `!gleave`",
-                                     ctx.guild, 0xFF0000))
+                                     inter.guild, 0xFF0000))
             return
         if u.get("messages", 0) < msg_req:
             need = msg_req - u.get("messages", 0)
             bar  = pbar(u.get("messages", 0), msg_req)
-            await ctx.send(embed=ce("Создание Гильдии",
+            await inter.response.send_message(embed=ce("Создание Гильдии",
                                      f"> **❌ Нужно {msg_req} сообщений!**\n"
                                      f"> [{bar}] {u.get('messages',0)}/{msg_req} · осталось **{need}**",
-                                     ctx.guild, 0xFF8800))
+                                     inter.guild, 0xFF8800))
             return
         result = await creation_dialog(ctx, self.bot)
         if not result:
@@ -1325,14 +1325,14 @@ class GuildCog(commands.Cog):
             gs = []
         for g in gs:
             if g.get("tag") == tag:
-                await ctx.send(embed=ce("Создание", f"> **❌ Тег [{tag}] уже занят!**",
-                                         ctx.guild, 0xFF0000))
+                await inter.response.send_message(embed=ce("Создание", f"> **❌ Тег [{tag}] уже занят!**",
+                                         inter.guild, 0xFF0000))
                 return
         gid = str(uuid.uuid4())[:8]
-        cat, chs = await build_channels(ctx.guild, name, tag, color, ctx.author)
+        cat, chs = await build_channels(inter.guild, name, tag, color, inter.author)
         
         # 🏅 Создаём роль для гильдии
-        guild_role = await create_guild_role(ctx.guild, tag, COLORS[color].get("hex", 0x3498DB))
+        guild_role = await create_guild_role(inter.guild, tag, COLORS[color].get("hex", 0x3498DB))
         guild_role_id = guild_role.id if guild_role else None
         
         save_guild(gid, {
@@ -1347,69 +1347,69 @@ class GuildCog(commands.Cog):
         # Даём лидеру роль гильдии
         if guild_role:
             try:
-                await ctx.author.add_roles(guild_role, reason="Создатель гильдии")
+                await inter.author.add_roles(guild_role, reason="Создатель гильдии")
             except Exception as e:
                 print(f"[gcreate] Не удалось дать роль: {e}")
         
         save_user(uid, sid, {"guild_id": gid, "guild_rank": "owner"})
         try:
-            old = ctx.author.display_name
+            old = inter.author.display_name
             if old.startswith("[") and "]" in old:
                 old = old.split("]", 1)[1].strip()
-            await ctx.author.edit(nick=f"[{tag}] {old}"[:32])
+            await inter.author.edit(nick=f"[{tag}] {old}"[:32])
         except Exception:
             pass
         ann_id = next((c["id"] for c in chs if c["slug"] == "анонсы"), None)
         if ann_id:
-            ann_ch = ctx.guild.get_channel(ann_id)
+            ann_ch = inter.guild.get_channel(ann_id)
             if ann_ch:
                 try:
                     await ann_ch.send(embed=disnake.Embed(
                         title=f"🌸 Гильдия [{tag}] {name} основана!",
-                        description=(f"> **Лидер:** {ctx.author.mention}\n"
+                        description=(f"> **Лидер:** {inter.author.mention}\n"
                                      f"> **Описание:** _{desc}_\n> _ _\n"
                                      f"> Пригласи участников: `!ginvite @юзер`"),
                         color=chex(color)).set_author(name=EMBED_AUTHOR))
                 except Exception:
                     pass
-        await ctx.send(embed=ge("🏰 Гильдия создана!",
+        await inter.response.send_message(embed=ge("🏰 Гильдия создана!",
                                  f"> **[{tag}] {name}**\n> _{desc}_\n> _ _\n"
-                                 f"> 👑 {ctx.author.mention} · 🎨 {COLORS[color]['label']}\n"
+                                 f"> 👑 {inter.author.mention} · 🎨 {COLORS[color]['label']}\n"
                                  f"> `!ginvite @юзер` — пригласить",
-                                 get_guild(gid), ctx.guild))
+                                 get_guild(gid), inter.guild))
 
-    @commands.command(name="gdelete")
+    @commands.slash_command(description="Удалить гильдию")
     @commands.cooldown(*COOLDOWNS["super_heavy"], commands.BucketType.user)
-    async def gdelete(self, ctx: commands.Context):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gdelete(self, inter: disnake.AppCommandInteraction):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Удаление", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Удаление", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
         if not gd or gd["owner_id"] != uid:
-            await ctx.send(embed=ce("Удаление", "> **❌ Только лидер может удалить!**",
-                                     ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Удаление", "> **❌ Только лидер может удалить!**",
+                                     inter.guild, 0xFF0000))
             return
-        await ctx.send(embed=ce("⚠️ Удаление",
+        await inter.response.send_message(embed=ce("⚠️ Удаление",
                                  f"> Удалить **[{gd['tag']}] {gd['name']}**?\n"
-                                 "> Напиши `ДА` для подтверждения (60 сек):", ctx.guild, 0xFF8800))
+                                 "> Напиши `ДА` для подтверждения (60 сек):", inter.guild, 0xFF8800))
 
         def check(m):
-            return m.author.id == ctx.author.id and m.channel.id == ctx.channel.id
+            return m.author.id == inter.author.id and m.channel.id == inter.channel.id
         try:
             r = await self.bot.wait_for("message", check=check, timeout=60)
         except asyncio.TimeoutError:
-            await ctx.send(embed=ce("Удаление", "> ⏰ Отменено.", ctx.guild, 0x888888))
+            await inter.response.send_message(embed=ce("Удаление", "> ⏰ Отменено.", inter.guild, 0x888888))
             return
         if r.content.upper() != "ДА":
-            await ctx.send(embed=ce("Удаление", "> ❌ Отменено.", ctx.guild, 0x888888))
+            await inter.response.send_message(embed=ce("Удаление", "> ❌ Отменено.", inter.guild, 0x888888))
             return
-        await self._dissolve_guild(ctx.guild, gd, sid)
-        await ctx.send(embed=ce("💔 Гильдия удалена",
+        await self._dissolve_guild(inter.guild, gd, sid)
+        await inter.response.send_message(embed=ce("💔 Гильдия удалена",
                                  f"> **[{gd['tag']}] {gd['name']}** была распущена.",
-                                 ctx.guild, 0x888888))
+                                 inter.guild, 0x888888))
 
     async def _dissolve_guild(self, srv: disnake.Guild, gd: dict, sid: str):
         """Внутренний хелпер: удалить каналы + вычистить участников."""
@@ -1436,10 +1436,10 @@ class GuildCog(commands.Cog):
                 pass
         db["guilds"].delete_one({"id": gd["id"]})
 
-    @commands.command(name="ginfo")
+    @commands.slash_command(description="Информация о гильдии")
     @commands.cooldown(*COOLDOWNS["info_light"], commands.BucketType.user)
-    async def ginfo(self, ctx: commands.Context, *, args: str = None):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def ginfo(self, inter: disnake.AppCommandInteraction, *, args: str = None):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         
         # Парсим аргументы
         show_all = False
@@ -1458,19 +1458,19 @@ class GuildCog(commands.Cog):
         if tag is None:
             u = get_user(uid, sid)
             if not u.get("guild_id"):
-                await ctx.send(embed=ce("Гильдия",
+                await inter.response.send_message(embed=ce("Гильдия",
                                          "> **❌ Укажи тег: `!ginfo <тег>` или вступи в гильдию**",
-                                         ctx.guild, 0xFF0000))
+                                         inter.guild, 0xFF0000))
                 return
             gd = get_guild(u["guild_id"])
         else:
             gd = guild_by_tag(sid, tag)
         if not gd:
-            await ctx.send(embed=ce("Гильдия", "> **❌ Не найдено!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Гильдия", "> **❌ Не найдено!**", inter.guild, 0xFF0000))
             return
         
         # Собираем информацию о лидере
-        owner = ctx.guild.get_member(int(gd["owner_id"]))
+        owner = inter.guild.get_member(int(gd["owner_id"]))
         o_name = owner.display_name if owner else f"ID:{gd['owner_id']}"
         
         # Получаем всех членов гильдии для фильтрации по рангам
@@ -1482,7 +1482,7 @@ class GuildCog(commands.Cog):
         limit = 5 if not show_all else len(viceowners)
         for m in viceowners[:limit]:
             mid = uid_from_member_doc(m)
-            mo = ctx.guild.get_member(int(mid)) if mid else None
+            mo = inter.guild.get_member(int(mid)) if mid else None
             name = mo.display_name if mo else f"ID:{mid}"
             viceowners_text += f"> 💎 {name}\n"
         viceowners_text = viceowners_text or "> —\n"
@@ -1495,7 +1495,7 @@ class GuildCog(commands.Cog):
         limit = 5 if not show_all else len(officers)
         for m in officers[:limit]:
             mid = uid_from_member_doc(m)
-            mo = ctx.guild.get_member(int(mid)) if mid else None
+            mo = inter.guild.get_member(int(mid)) if mid else None
             name = mo.display_name if mo else f"ID:{mid}"
             officers_text += f"> 🛡️ {name}\n"
         officers_text = officers_text or "> —\n"
@@ -1508,7 +1508,7 @@ class GuildCog(commands.Cog):
         limit = 5 if not show_all else len(mods)
         for m in mods[:limit]:
             mid = uid_from_member_doc(m)
-            mo = ctx.guild.get_member(int(mid)) if mid else None
+            mo = inter.guild.get_member(int(mid)) if mid else None
             name = mo.display_name if mo else f"ID:{mid}"
             mods_text += f"> 🔨 {name}\n"
         mods_text = mods_text or "> —\n"
@@ -1529,18 +1529,18 @@ class GuildCog(commands.Cog):
                 f"> **⚔️ Бои:** {gd.get('wins',0)}W / {gd.get('losses',0)}L\n> _ _\n"
                 f"> **🎨 Цвет:** {COLORS.get(gd['color'], COLORS[DEFAULT_COLOR])['label']}\n"
                 f"> **⭐ Апгрейды:**\n{upg}> 📅 Основана: {gd.get('created_at','?')}")
-        await ctx.send(embed=ge(f"🏰 [{gd['tag']}] {gd['name']}", desc, gd, ctx.guild))
+        await inter.response.send_message(embed=ge(f"🏰 [{gd['tag']}] {gd['name']}", desc, gd, inter.guild))
 
-    @commands.command(name="glist")
+    @commands.slash_command(description="Список гильдий")
     @commands.cooldown(*COOLDOWNS["info_light"], commands.BucketType.user)
-    async def glist(self, ctx: commands.Context):
-        sid = str(ctx.guild.id)
+    async def glist(self, inter: disnake.AppCommandInteraction):
+        sid = str(inter.guild.id)
         try:
             gs = list(db["guilds"].find({"server_id": sid}).sort("bank", -1))
         except Exception:
             gs = []
         if not gs:
-            await ctx.send(embed=ce("Гильдии", "> **😢 Нет гильдий! Создай: `!gcreate`**", ctx.guild))
+            await inter.response.send_message(embed=ce("Гильдии", "> **😢 Нет гильдий! Создай: `!gcreate`**", inter.guild))
             return
         medals = ["🥇", "🥈", "🥉"]
         pages, per = [], 6
@@ -1556,39 +1556,39 @@ class GuildCog(commands.Cog):
                          f"> 👥 {cnt}/{lim} | 💰 {g.get('bank',0):,} | ⚔️ {g.get('wins',0)}W\n> _ _\n")
             pages.append(desc)
         total = len(pages)
-        pkey  = f"glist:{ctx.guild.id}:{ctx.author.id}:{int(datetime.utcnow().timestamp())}"
+        pkey  = f"glist:{inter.guild.id}:{inter.author.id}:{int(datetime.utcnow().timestamp())}"
         _page_store[pkey] = pages
         _page_store[pkey + ":title"] = "📋 Гильдии ({}/{})"
-        row = page_row(ctx.author.id, 0, total, pkey)
-        await ctx.send(embed=ce("📋 Гильдии (1/{})".format(total), pages[0], ctx.guild),
+        row = page_row(inter.author.id, 0, total, pkey)
+        await inter.response.send_message(embed=ce("📋 Гильдии (1/{})".format(total), pages[0], inter.guild),
                        components=[row] if total > 1 else [])
 
-    @commands.command(name="gmembers")
+    @commands.slash_command(description="Участники гильдии")
     @commands.cooldown(*COOLDOWNS["info_light"], commands.BucketType.user)
-    async def gmembers(self, ctx: commands.Context, *, tag: str = None):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gmembers(self, inter: disnake.AppCommandInteraction, *, tag: str = None):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         if tag is None:
             u = get_user(uid, sid)
             if not u.get("guild_id"):
-                await ctx.send(embed=ce("Участники", "> **❌ Укажи тег!**", ctx.guild, 0xFF0000))
+                await inter.response.send_message(embed=ce("Участники", "> **❌ Укажи тег!**", inter.guild, 0xFF0000))
                 return
             gd = get_guild(u["guild_id"])
         else:
             gd = guild_by_tag(sid, tag)
         if not gd:
-            await ctx.send(embed=ce("Участники", "> **❌ Не найдено!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Участники", "> **❌ Не найдено!**", inter.guild, 0xFF0000))
             return
         mlist = guild_members(gd["id"], sid)
         desc  = ""
         for md in mlist:
             mid  = uid_from_member_doc(md)
-            mo   = ctx.guild.get_member(int(mid)) if mid else None
+            mo   = inter.guild.get_member(int(mid)) if mid else None
             name = mo.display_name if mo else f"ID:{mid}"
             desc += f"> {rank_icon(md.get('guild_rank','member'))} **{name}** — ⭐ {md.get('xp',0):,} XP\n"
         cnt = len(mlist)
         lim = member_limit(gd.get("upgrades", []))
-        await ctx.send(embed=ge(f"👥 [{gd['tag']}] {gd['name']} ({cnt}/{lim})",
-                                 desc or "> *Нет участников*", gd, ctx.guild))
+        await inter.response.send_message(embed=ge(f"👥 [{gd['tag']}] {gd['name']} ({cnt}/{lim})",
+                                 desc or "> *Нет участников*", gd, inter.guild))
 
     async def _send_invite(self, guild, inviter, member, respond_fn, error_fn):
         uid, sid = str(inviter.id), str(guild.id)
@@ -1636,14 +1636,14 @@ class GuildCog(commands.Cog):
                       gd, guild),
             components=[row])
 
-    @commands.command(name="ginvite")
+    @commands.slash_command(description="Пригласить в гильдию")
     @commands.cooldown(*COOLDOWNS["guild_heavy"], commands.BucketType.user)
-    async def ginvite(self, ctx: commands.Context, member: disnake.Member):
+    async def ginvite(self, inter: disnake.AppCommandInteraction, member: disnake.Member):
         async def respond_fn(content, embed, components):
-            await ctx.send(content=content, embed=embed, components=components)
+            await inter.response.send_message(content=content, embed=embed, components=components)
         async def error_fn(embed):
-            await ctx.send(embed=embed)
-        await self._send_invite(ctx.guild, ctx.author, member, respond_fn, error_fn)
+            await inter.response.send_message(embed=embed)
+        await self._send_invite(inter.guild, inter.author, member, respond_fn, error_fn)
 
     @commands.slash_command(name="ginvite", description="Пригласить участника в гильдию")
     async def ginvite_slash(self, inter: disnake.ApplicationCommandInteraction,
@@ -1655,84 +1655,84 @@ class GuildCog(commands.Cog):
             await inter.edit_original_response(embed=embed)
         await self._send_invite(inter.guild, inter.author, member, respond_fn, error_fn)
 
-    @commands.command(name="gleave")
+    @commands.slash_command(description="Покинуть гильдию")
     @commands.cooldown(*COOLDOWNS["guild_heavy"], commands.BucketType.user)
-    async def gleave(self, ctx: commands.Context):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gleave(self, inter: disnake.AppCommandInteraction):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Выход", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Выход", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
         if not gd:
             return
         if gd["owner_id"] == uid:
-            await ctx.send(embed=ce("Выход",
+            await inter.response.send_message(embed=ce("Выход",
                                      "> **❌ Лидер не может просто уйти!**\n"
                                      "> `!gdelete` — удалить | `!gtransfer @юзер` — передать",
-                                     ctx.guild, 0xFF0000))
+                                     inter.guild, 0xFF0000))
             return
         officers = gd.get("officers", [])
         if uid in officers:
             officers.remove(uid)
             save_guild(gid, {"officers": officers})
         save_user(uid, sid, {"guild_id": None, "guild_rank": None})
-        await refresh_access(ctx.guild, gd, ctx.author, remove=True)
+        await refresh_access(inter.guild, gd, inter.author, remove=True)
         
         # 🏅 Убираем роль гильдии
         guild_role_id = gd.get("guild_role_id")
         if guild_role_id:
-            guild_role = ctx.guild.get_role(guild_role_id)
-            if guild_role and guild_role in ctx.author.roles:
+            guild_role = inter.guild.get_role(guild_role_id)
+            if guild_role and guild_role in inter.author.roles:
                 try:
-                    await ctx.author.remove_roles(guild_role, reason=f"Выход из гильдии {gd['tag']}")
+                    await inter.author.remove_roles(guild_role, reason=f"Выход из гильдии {gd['tag']}")
                 except Exception as e:
                     print(f"[gleave] Ошибка при удалении роли: {e}")
         
         try:
-            if ctx.author.display_name.startswith("["):
-                clean = ctx.author.display_name.split("]", 1)[1].strip()
-                await ctx.author.edit(nick=clean or None)
+            if inter.author.display_name.startswith("["):
+                clean = inter.author.display_name.split("]", 1)[1].strip()
+                await inter.author.edit(nick=clean or None)
         except Exception:
             pass
-        await ctx.send(embed=ce("👋 Выход",
-                                 f"> {ctx.author.mention} покинул(а) **[{gd['tag']}] {gd['name']}**.",
-                                 ctx.guild, 0x888888))
+        await inter.response.send_message(embed=ce("👋 Выход",
+                                 f"> {inter.author.mention} покинул(а) **[{gd['tag']}] {gd['name']}**.",
+                                 inter.guild, 0x888888))
 
-    @commands.command(name="gkick")
+    @commands.slash_command(description="Исключить из гильдии")
     @commands.cooldown(*COOLDOWNS["guild_heavy"], commands.BucketType.user)
-    async def gkick(self, ctx: commands.Context, member: disnake.Member):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gkick(self, inter: disnake.AppCommandInteraction, member: disnake.Member):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Кик", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Кик", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
         if uid != gd["owner_id"] and uid not in gd.get("officers", []):
-            await ctx.send(embed=ce("Кик", "> **❌ Нет прав!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Кик", "> **❌ Нет прав!**", inter.guild, 0xFF0000))
             return
         t_uid = str(member.id)
         t = get_user(t_uid, sid)
         if t.get("guild_id") != gid:
-            await ctx.send(embed=ce("Кик", f"> **❌ {member.display_name} не в вашей гильдии!**",
-                                     ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Кик", f"> **❌ {member.display_name} не в вашей гильдии!**",
+                                     inter.guild, 0xFF0000))
             return
         if t_uid == gd["owner_id"]:
-            await ctx.send(embed=ce("Кик", "> **❌ Нельзя кикнуть лидера!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Кик", "> **❌ Нельзя кикнуть лидера!**", inter.guild, 0xFF0000))
             return
         officers = gd.get("officers", [])
         if t_uid in officers:
             officers.remove(t_uid)
             save_guild(gid, {"officers": officers})
         save_user(t_uid, sid, {"guild_id": None, "guild_rank": None})
-        await refresh_access(ctx.guild, gd, member, remove=True)
+        await refresh_access(inter.guild, gd, member, remove=True)
         
         # 🏅 Убираем роль гильдии
         guild_role_id = gd.get("guild_role_id")
         if guild_role_id:
-            guild_role = ctx.guild.get_role(guild_role_id)
+            guild_role = inter.guild.get_role(guild_role_id)
             if guild_role and guild_role in member.roles:
                 try:
                     await member.remove_roles(guild_role, reason=f"Кик из гильдии {gd['tag']}")
@@ -1745,93 +1745,93 @@ class GuildCog(commands.Cog):
                 await member.edit(nick=clean or None)
         except Exception:
             pass
-        await ctx.send(embed=ce("👢 Кик",
+        await inter.response.send_message(embed=ce("👢 Кик",
                                  f"> {member.mention} исключён(а) из **[{gd['tag']}]**.",
-                                 ctx.guild, 0xFF4444))
+                                 inter.guild, 0xFF4444))
 
-    @commands.command(name="gpromote")
+    @commands.slash_command(description="Повысить в ранге")
     @commands.cooldown(*COOLDOWNS["rank_ops"], commands.BucketType.user)
-    async def gpromote(self, ctx: commands.Context, member: disnake.Member):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gpromote(self, inter: disnake.AppCommandInteraction, member: disnake.Member):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Повышение", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Повышение", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
         if u.get("guild_rank") not in ["owner", "viceowner"]:
-            await ctx.send(embed=ce("Повышение", "> **❌ Только лидер/вице-лидер!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Повышение", "> **❌ Только лидер/вице-лидер!**", inter.guild, 0xFF0000))
             return
         t_uid = str(member.id)
         t = get_user(t_uid, sid)
         if t.get("guild_id") != gid:
-            await ctx.send(embed=ce("Повышение", f"> **❌ {member.display_name} не в вашей гильдии!**",
-                                     ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Повышение", f"> **❌ {member.display_name} не в вашей гильдии!**",
+                                     inter.guild, 0xFF0000))
             return
         ladder = ["recruit", "member", "moderator", "officer", "viceowner", "owner"]
         cur_rank = t.get("guild_rank", "recruit")
         if cur_rank == "owner":
-            await ctx.send(embed=ce("Повышение", "> **❌ Максимальный ранг!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Повышение", "> **❌ Максимальный ранг!**", inter.guild, 0xFF0000))
             return
         idx = ladder.index(cur_rank) if cur_rank in ladder else 0
         new_rank = ladder[min(idx + 1, len(ladder) - 1)]
         save_user(t_uid, sid, {"guild_rank": new_rank})
         rd = GUILD_RANKS[new_rank]
-        await ctx.send(embed=ge("🔼 Повышение",
-                                 f"> {member.mention} → **{rd['icon']} {rd['name']}**!", gd, ctx.guild))
+        await inter.response.send_message(embed=ge("🔼 Повышение",
+                                 f"> {member.mention} → **{rd['icon']} {rd['name']}**!", gd, inter.guild))
 
-    @commands.command(name="gdemote")
+    @commands.slash_command(description="Понизить в ранге")
     @commands.cooldown(*COOLDOWNS["rank_ops"], commands.BucketType.user)
-    async def gdemote(self, ctx: commands.Context, member: disnake.Member):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gdemote(self, inter: disnake.AppCommandInteraction, member: disnake.Member):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Понижение", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Понижение", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
         if u.get("guild_rank") not in ["owner", "viceowner"]:
-            await ctx.send(embed=ce("Понижение", "> **❌ Только лидер/вице-лидер!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Понижение", "> **❌ Только лидер/вице-лидер!**", inter.guild, 0xFF0000))
             return
         t_uid = str(member.id)
         t = get_user(t_uid, sid)
         if t.get("guild_id") != gid:
-            await ctx.send(embed=ce("Понижение", f"> **❌ {member.display_name} не в вашей гильдии!**",
-                                     ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Понижение", f"> **❌ {member.display_name} не в вашей гильдии!**",
+                                     inter.guild, 0xFF0000))
             return
         ladder = ["recruit", "member", "moderator", "officer", "viceowner", "owner"]
         cur_rank = t.get("guild_rank", "member")
         if cur_rank == "recruit":
-            await ctx.send(embed=ce("Понижение", "> **❌ Минимальный ранг!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Понижение", "> **❌ Минимальный ранг!**", inter.guild, 0xFF0000))
             return
         idx = ladder.index(cur_rank) if cur_rank in ladder else 1
         new_rank = ladder[max(idx - 1, 0)]
         save_user(t_uid, sid, {"guild_rank": new_rank})
         rd = GUILD_RANKS[new_rank]
-        await ctx.send(embed=ge("🔽 Понижение",
-                                 f"> {member.mention} → **{rd['icon']} {rd['name']}**.", gd, ctx.guild))
+        await inter.response.send_message(embed=ge("🔽 Понижение",
+                                 f"> {member.mention} → **{rd['icon']} {rd['name']}**.", gd, inter.guild))
 
-    @commands.command(name="gtransfer")
+    @commands.slash_command(description="Передать лидерство")
     @commands.cooldown(*COOLDOWNS["super_heavy"], commands.BucketType.user)
-    async def gtransfer(self, ctx: commands.Context, member: disnake.Member):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gtransfer(self, inter: disnake.AppCommandInteraction, member: disnake.Member):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Передача", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Передача", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
         if gd["owner_id"] != uid:
-            await ctx.send(embed=ce("Передача", "> **❌ Только лидер!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Передача", "> **❌ Только лидер!**", inter.guild, 0xFF0000))
             return
         t_uid = str(member.id)
         t = get_user(t_uid, sid)
         if t.get("guild_id") != gid:
-            await ctx.send(embed=ce("Передача", f"> **❌ {member.display_name} не в вашей гильдии!**",
-                                     ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Передача", f"> **❌ {member.display_name} не в вашей гильдии!**",
+                                     inter.guild, 0xFF0000))
             return
         if t_uid == uid:
-            await ctx.send(embed=ce("Передача", "> **❌ Ты уже лидер!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Передача", "> **❌ Ты уже лидер!**", inter.guild, 0xFF0000))
             return
         officers = gd.get("officers", [])
         if t_uid in officers:
@@ -1839,80 +1839,80 @@ class GuildCog(commands.Cog):
         save_guild(gid, {"owner_id": t_uid, "officers": officers})
         save_user(uid, sid, {"guild_rank": "member"})
         save_user(t_uid, sid, {"guild_rank": "owner"})
-        await ctx.send(embed=ge("👑 Передача лидерства",
-                                 f"> {ctx.author.mention} передал(а) корону {member.mention}!\n"
-                                 f"> Новый лидер: {member.mention}", gd, ctx.guild))
+        await inter.response.send_message(embed=ge("👑 Передача лидерства",
+                                 f"> {inter.author.mention} передал(а) корону {member.mention}!\n"
+                                 f"> Новый лидер: {member.mention}", gd, inter.guild))
 
-    @commands.command(name="granks")
+    @commands.slash_command(description="Ранги")
     @commands.cooldown(*COOLDOWNS["info_light"], commands.BucketType.user)
-    async def granks(self, ctx: commands.Context):
-        e = ce("📊 Система Рангов", "Ранги дают бонусы к XP и монетам за сообщения:", ctx.guild, 0x9370DB)
+    async def granks(self, inter: disnake.AppCommandInteraction):
+        e = ce("📊 Система Рангов", "Ранги дают бонусы к XP и монетам за сообщения:", inter.guild, 0x9370DB)
         for rk in ["recruit", "member", "moderator", "officer", "viceowner", "owner"]:
             rd = GUILD_RANKS.get(rk)
             if rd:
                 e.add_field(name=f"{rd['icon']} {rd['name']}",
                             value=f"XP ×{rd['xp_bonus']} | Монеты ×{rd['coin_bonus']}", inline=False)
-        await ctx.send(embed=e)
+        await inter.response.send_message(embed=e)
 
-    @commands.command(name="gcolor")
+    @commands.slash_command(description="Изменить цвет")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def gcolor(self, ctx: commands.Context, color: str = None):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gcolor(self, inter: disnake.AppCommandInteraction, color: str = None):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Цвет", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Цвет", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
         if uid != gd["owner_id"] and uid not in gd.get("officers", []):
-            await ctx.send(embed=ce("Цвет", "> **❌ Нет прав!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Цвет", "> **❌ Нет прав!**", inter.guild, 0xFF0000))
             return
         if not color or color.lower() not in COLORS:
             avail = " | ".join(f"`{k}` {v['label']}" for k, v in COLORS.items())
-            await ctx.send(embed=ce("🎨 Цвета", f"> {avail}\n> `!gcolor <цвет>`", ctx.guild))
+            await inter.response.send_message(embed=ce("🎨 Цвета", f"> {avail}\n> `!gcolor <цвет>`", inter.guild))
             return
         gd["color"] = color.lower()
         save_guild(gid, {"color": color.lower()})
-        owner = ctx.guild.get_member(int(gd["owner_id"])) or ctx.author
-        msg = await ctx.send(embed=ce("⏳", "> Пересоздаю каналы...", ctx.guild))
-        await rebuild(ctx.guild, gd, owner)
+        owner = inter.guild.get_member(int(gd["owner_id"])) or inter.author
+        msg = await inter.response.send_message(embed=ce("⏳", "> Пересоздаю каналы...", inter.guild))
+        await rebuild(inter.guild, gd, owner)
         ci = COLORS[color.lower()]
-        await msg.edit(embed=ce("🎨 Цвет обновлён!", f"> **[{gd['tag']}]** → {ci['label']}", ctx.guild, ci["hex"]))
+        await msg.edit(embed=ce("🎨 Цвет обновлён!", f"> **[{gd['tag']}]** → {ci['label']}", inter.guild, ci["hex"]))
 
-    @commands.command(name="gdesc")
+    @commands.slash_command(description="Изменить описание")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def gdesc(self, ctx: commands.Context, *, text: str):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gdesc(self, inter: disnake.AppCommandInteraction, *, text: str):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Описание", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Описание", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
         if uid != gd["owner_id"] and uid not in gd.get("officers", []):
-            await ctx.send(embed=ce("Описание", "> **❌ Нет прав!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Описание", "> **❌ Нет прав!**", inter.guild, 0xFF0000))
             return
         if len(text) > 100:
-            await ctx.send(embed=ce("Описание", "> **❌ Максимум 100 символов!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Описание", "> **❌ Максимум 100 символов!**", inter.guild, 0xFF0000))
             return
         save_guild(gid, {"description": text})
         gd["description"] = text
-        await ctx.send(embed=ge("✏️ Описание обновлено", f"> _{text}_", gd, ctx.guild))
+        await inter.response.send_message(embed=ge("✏️ Описание обновлено", f"> _{text}_", gd, inter.guild))
 
-    @commands.command(name="gdeposit", aliases=["gdep"])
+    @commands.slash_command(description="Пополнить казну")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def gdeposit(self, ctx: commands.Context, amount: int):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gdeposit(self, inter: disnake.AppCommandInteraction, amount: int):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Казна", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Казна", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
         if amount <= 0:
-            await ctx.send(embed=ce("Казна", "> **❌ Сумма > 0**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Казна", "> **❌ Сумма > 0**", inter.guild, 0xFF0000))
             return
         if u.get("coins", 0) < amount:
-            await ctx.send(embed=ce("Казна", f"> **❌ Не хватает монет!** У тебя: {u.get('coins',0):,}",
-                                     ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Казна", f"> **❌ Не хватает монет!** У тебя: {u.get('coins',0):,}",
+                                     inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
@@ -1920,40 +1920,40 @@ class GuildCog(commands.Cog):
         save_guild(gid, {"bank": new_bank})
         save_user(uid, sid, {"coins": u.get("coins", 0) - amount})
         gd["bank"] = new_bank
-        await ctx.send(embed=ge("💰 Взнос в казну",
-                                 f"> 💸 **+{amount:,}**\n> 🏦 Казна: **{new_bank:,}**", gd, ctx.guild))
+        await inter.response.send_message(embed=ge("💰 Взнос в казну",
+                                 f"> 💸 **+{amount:,}**\n> 🏦 Казна: **{new_bank:,}**", gd, inter.guild))
 
-    @commands.command(name="gwithdraw", aliases=["gwith"])
+    @commands.slash_command(description="Снять из казны")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def gwithdraw(self, ctx: commands.Context, amount: int):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gwithdraw(self, inter: disnake.AppCommandInteraction, amount: int):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Казна", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Казна", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
         if gd["owner_id"] != uid:
-            await ctx.send(embed=ce("Казна", "> **❌ Только лидер!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Казна", "> **❌ Только лидер!**", inter.guild, 0xFF0000))
             return
         if amount <= 0 or gd.get("bank", 0) < amount:
-            await ctx.send(embed=ce("Казна",
+            await inter.response.send_message(embed=ce("Казна",
                                      f"> **❌ Недостаточно в казне!** {gd.get('bank',0):,}",
-                                     ctx.guild, 0xFF0000))
+                                     inter.guild, 0xFF0000))
             return
         new_bank = gd.get("bank", 0) - amount
         save_guild(gid, {"bank": new_bank})
         save_user(uid, sid, {"coins": u.get("coins", 0) + amount})
         gd["bank"] = new_bank
-        await ctx.send(embed=ge("💸 Вывод", f"> **-{amount:,}**\n> Казна: **{new_bank:,}**", gd, ctx.guild))
+        await inter.response.send_message(embed=ge("💸 Вывод", f"> **-{amount:,}**\n> Казна: **{new_bank:,}**", gd, inter.guild))
 
-    @commands.command(name="gupgrade")
+    @commands.slash_command(description="Апгрейды")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def gupgrade(self, ctx: commands.Context, upg_id: str = None):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gupgrade(self, inter: disnake.AppCommandInteraction, upg_id: str = None):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Апгрейды", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Апгрейды", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
@@ -1963,50 +1963,50 @@ class GuildCog(commands.Cog):
                 owned = " ✅" if k in gd.get("upgrades", []) else ""
                 desc += f"> {upg['emoji']} **{upg['name']}**{owned} — {upg['price']:,} | ID:`{k}`\n> _ _\n"
             desc += f"> 💰 **Казна:** {gd.get('bank',0):,}\n> Пример: `!gupgrade slot_1`"
-            await ctx.send(embed=ge("⭐ Апгрейды", desc, gd, ctx.guild))
+            await inter.response.send_message(embed=ge("⭐ Апгрейды", desc, gd, inter.guild))
             return
         if uid != gd["owner_id"] and uid not in gd.get("officers", []):
-            await ctx.send(embed=ce("Апгрейды", "> **❌ Нет прав!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Апгрейды", "> **❌ Нет прав!**", inter.guild, 0xFF0000))
             return
         if upg_id not in GUILD_UPGRADES:
-            await ctx.send(embed=ce("Апгрейды", f"> **❌ `{upg_id}` не найден!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Апгрейды", f"> **❌ `{upg_id}` не найден!**", inter.guild, 0xFF0000))
             return
         if upg_id in gd.get("upgrades", []):
-            await ctx.send(embed=ce("Апгрейды", "> **❌ Уже куплен!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Апгрейды", "> **❌ Уже куплен!**", inter.guild, 0xFF0000))
             return
         upg  = GUILD_UPGRADES[upg_id]
         bank = gd.get("bank", 0)
         if bank < upg["price"]:
-            await ctx.send(embed=ce("Апгрейды",
+            await inter.response.send_message(embed=ce("Апгрейды",
                                      f"> **❌ Не хватает!** Казна: {bank:,} | Нужно: {upg['price']:,}",
-                                     ctx.guild, 0xFF0000))
+                                     inter.guild, 0xFF0000))
             return
         new_bank = bank - upg["price"]
         upgrades = gd.get("upgrades", []) + [upg_id]
         save_guild(gid, {"bank": new_bank, "upgrades": upgrades})
         gd["bank"] = new_bank
         gd["upgrades"] = upgrades
-        await ctx.send(embed=ge("⭐ Апгрейд куплен!",
-                                 f"> {upg['emoji']} **{upg['name']}**\n> Казна: **{new_bank:,}**", gd, ctx.guild))
+        await inter.response.send_message(embed=ge("⭐ Апгрейд куплен!",
+                                 f"> {upg['emoji']} **{upg['name']}**\n> Казна: **{new_bank:,}**", gd, inter.guild))
 
-    @commands.command(name="gbank", aliases=["gvault", "gcashbox"])
+    @commands.slash_command(description="Казна")
     @commands.cooldown(*COOLDOWNS["info_light"], commands.BucketType.user)
-    async def gbank(self, ctx: commands.Context, *, tag: str = None):
+    async def gbank(self, inter: disnake.AppCommandInteraction, *, tag: str = None):
         """Просмотр казны гильдии с полной статистикой"""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         
         if tag is None:
             if not u.get("guild_id"):
-                await ctx.send(embed=ce("Казна", "> **❌ Ты не в гильдии!**\n> Укажи тег: `!gbank <тег>`",
-                                        ctx.guild, 0xFF0000))
+                await inter.response.send_message(embed=ce("Казна", "> **❌ Ты не в гильдии!**\n> Укажи тег: `!gbank <тег>`",
+                                        inter.guild, 0xFF0000))
                 return
             gd = get_guild(u["guild_id"])
         else:
             gd = guild_by_tag(sid, tag)
         
         if not gd:
-            await ctx.send(embed=ce("Казна", "> **❌ Гильдия не найдена!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Казна", "> **❌ Гильдия не найдена!**", inter.guild, 0xFF0000))
             return
         
         bank = gd.get("bank", 0)
@@ -2056,26 +2056,26 @@ class GuildCog(commands.Cog):
         
         desc += f"> **💡 Совет:** Используй `!gupgrade` для улучшения"
         
-        await ctx.send(embed=ge(f"🏦 Казна [{gd['tag']}] {gd['name']}", desc, gd, ctx.guild))
+        await inter.response.send_message(embed=ge(f"🏦 Казна [{gd['tag']}] {gd['name']}", desc, gd, inter.guild))
 
-    @commands.command(name="geconomy", aliases=["gecon", "gstats"])
+    @commands.slash_command(description="Экономика")
     @commands.cooldown(*COOLDOWNS["info_light"], commands.BucketType.user)
-    async def geconomy(self, ctx: commands.Context, *, tag: str = None):
+    async def geconomy(self, inter: disnake.AppCommandInteraction, *, tag: str = None):
         """Полная статистика экономики гильдии"""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         
         if tag is None:
             if not u.get("guild_id"):
-                await ctx.send(embed=ce("Экономика", "> **❌ Ты не в гильдии!**",
-                                        ctx.guild, 0xFF0000))
+                await inter.response.send_message(embed=ce("Экономика", "> **❌ Ты не в гильдии!**",
+                                        inter.guild, 0xFF0000))
                 return
             gd = get_guild(u["guild_id"])
         else:
             gd = guild_by_tag(sid, tag)
         
         if not gd:
-            await ctx.send(embed=ce("Экономика", "> **❌ Гильдия не найдена!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Экономика", "> **❌ Гильдия не найдена!**", inter.guild, 0xFF0000))
             return
         
         members = guild_members(gd["id"], sid)
@@ -2156,23 +2156,23 @@ class GuildCog(commands.Cog):
         else:
             desc += "> **✅ Все апгрейды куплены! Вы легенды! 🏆**"
         
-        await ctx.send(embed=ge(f"📊 Экономика [{gd['tag']}]", desc, gd, ctx.guild))
+        await inter.response.send_message(embed=ge(f"📊 Экономика [{gd['tag']}]", desc, gd, inter.guild))
 
-    @commands.command(name="gmyincome")
+    @commands.slash_command(description="Мой доход")
     @commands.cooldown(*COOLDOWNS["info_light"], commands.BucketType.user)
-    async def gmyincome(self, ctx: commands.Context):
+    async def gmyincome(self, inter: disnake.AppCommandInteraction):
         """Твой личный пассивный доход от ферм"""
         if not INCOME_SOURCES:
-            await ctx.send(embed=ce("Доход", "> **❌ Система ферм недоступна**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Доход", "> **❌ Система ферм недоступна**", inter.guild, 0xFF0000))
             return
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         farms = u.get("farms", [])
         
         if not farms:
-            await ctx.send(embed=ce("🌾 Мой доход", "> **❌ У тебя нет ферм!**\n> Купи: `!buyfarm`",
-                                    ctx.guild, 0xFF8800))
+            await inter.response.send_message(embed=ce("🌾 Мой доход", "> **❌ У тебя нет ферм!**\n> Купи: `!buyfarm`",
+                                    inter.guild, 0xFF8800))
             return
         
         gd = get_guild(u.get("guild_id")) if u.get("guild_id") else None
@@ -2203,27 +2203,27 @@ class GuildCog(commands.Cog):
                     f"> • Тебе в месяц: **~{player_gets * 24 * 30:,}** монет\n> _ _\n"
                     f"> 💡 Бонус казны: **+{(vault_bonus-1)*100:.0f}%**")
         
-        await ctx.send(embed=ce("🌾 Твой пассивный доход", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("🌾 Твой пассивный доход", desc, inter.guild, 0x2ECC71))
 
-    @commands.command(name="gwar")
+    @commands.slash_command(description="Война")
     @commands.cooldown(*COOLDOWNS["wars"], commands.BucketType.user)
-    async def gwar(self, ctx: commands.Context, *, tag: str):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gwar(self, inter: disnake.AppCommandInteraction, *, tag: str):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Война", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Война", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
         if gd["owner_id"] != uid:
-            await ctx.send(embed=ce("Война", "> **❌ Только лидер объявляет войну!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Война", "> **❌ Только лидер объявляет войну!**", inter.guild, 0xFF0000))
             return
         enemy = guild_by_tag(sid, tag)
         if not enemy:
-            await ctx.send(embed=ce("Война", f"> **❌ [{tag.upper()}] не найдена!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Война", f"> **❌ [{tag.upper()}] не найдена!**", inter.guild, 0xFF0000))
             return
         if enemy["id"] == gid:
-            await ctx.send(embed=ce("Война", "> **❌ Нельзя воевать с собой!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Война", "> **❌ Нельзя воевать с собой!**", inter.guild, 0xFF0000))
             return
         
         # ════════════════════════════════════════════════════════════
@@ -2250,10 +2250,10 @@ class GuildCog(commands.Cog):
                 })
         
         en_p = enemy.get("bank", 0) + member_count(enemy["id"], sid) * 500 + random.randint(0, 3000)
-        wmsg = await ctx.send(embed=ce("⚔️ ВОЙНА ГИЛЬДИЙ!",
+        wmsg = await inter.response.send_message(embed=ce("⚔️ ВОЙНА ГИЛЬДИЙ!",
                                         f"> **[{gd['tag']}] {gd['name']}** ⚔️ **[{enemy['tag']}] {enemy['name']}**\n"
                                         f"{fortune_bonus}"
-                                        f"> _ _\n> Сражение начинается...", ctx.guild, 0xFF4444))
+                                        f"> _ _\n> Сражение начинается...", inter.guild, 0xFF4444))
         await asyncio.sleep(3)
         winner, loser = (gd, enemy) if my_p > en_p else (enemy, gd)
         prize = min(loser.get("bank", 0) // 5, 10_000)
@@ -2277,16 +2277,16 @@ class GuildCog(commands.Cog):
             f"> Разгромил **[{loser['tag']}]**!\n> _ _\n"
             f"> 💰 Трофей: **{prize:,} монет**{fortune_desc}\n"
             f"> 🏆 [{winner['tag']}] Победы: {wr['wins']}\n"
-            f"> 💀 [{loser['tag']}] Поражения: {lr['losses']}", ctx.guild, 0xFFD700))
+            f"> 💀 [{loser['tag']}] Поражения: {lr['losses']}", inter.guild, 0xFFD700))
 
     # ══════════════════════════════════════════════════════════
     # 👮 АДМИНСКИЕ КОМАНДЫ
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="greset")
+    @commands.slash_command(description="Перезагрузка")
     @is_admin()
-    async def greset(self, ctx: commands.Context):
-        sid = str(ctx.guild.id)
+    async def greset(self, inter: disnake.AppCommandInteraction):
+        sid = str(inter.guild.id)
         try:
             us_list = list(db["users"].find({"server_id": sid}))
         except Exception:
@@ -2295,61 +2295,61 @@ class GuildCog(commands.Cog):
             uid = uid_from_member_doc(u)
             if uid:
                 save_user(uid, sid, {"messages": 0, "xp": 0, "level": 1, "coins": 0})
-        await ctx.send(embed=ce("Admin", "🧹 Статистика сброшена.", ctx.guild))
+        await inter.response.send_message(embed=ce("Admin", "🧹 Статистика сброшена.", inter.guild))
 
-    @commands.command(name="grebuildall")
+    @commands.slash_command(description="Пересоздать все")
     @is_admin()
-    async def grebuildall(self, ctx: commands.Context):
-        sid = str(ctx.guild.id)
+    async def grebuildall(self, inter: disnake.AppCommandInteraction):
+        sid = str(inter.guild.id)
         try:
             gs_list = list(db["guilds"].find({"server_id": sid}))
         except Exception:
             gs_list = []
-        msg = await ctx.send(embed=ce("⏳", f"> Пересоздаю {len(gs_list)} гильдий...", ctx.guild))
+        msg = await inter.response.send_message(embed=ce("⏳", f"> Пересоздаю {len(gs_list)} гильдий...", inter.guild))
         for g in gs_list:
             gd    = dict(g)
-            owner = ctx.guild.get_member(int(gd["owner_id"])) or ctx.author
-            await rebuild(ctx.guild, gd, owner)
-        await msg.edit(embed=ce("✅ Готово!", f"> {len(gs_list)} гильдий пересозданы!", ctx.guild))
+            owner = inter.guild.get_member(int(gd["owner_id"])) or inter.author
+            await rebuild(inter.guild, gd, owner)
+        await msg.edit(embed=ce("✅ Готово!", f"> {len(gs_list)} гильдий пересозданы!", inter.guild))
 
-    @commands.command(name="gforcecolor")
+    @commands.slash_command(description="Команда gforcecolor")
     @is_admin()
-    async def gforcecolor(self, ctx: commands.Context, tag: str, color: str):
-        sid = str(ctx.guild.id)
+    async def gforcecolor(self, inter: disnake.AppCommandInteraction, tag: str, color: str):
+        sid = str(inter.guild.id)
         gd  = guild_by_tag(sid, tag)
         if not gd:
-            await ctx.send(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", inter.guild, 0xFF0000))
             return
         if color.lower() not in COLORS:
-            await ctx.send(embed=ce("Admin", f"> **❌ Цвет `{color}` не найден!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Admin", f"> **❌ Цвет `{color}` не найден!**", inter.guild, 0xFF0000))
             return
         gd["color"] = color.lower()
         save_guild(gd["id"], {"color": color.lower()})
-        owner = ctx.guild.get_member(int(gd["owner_id"])) or ctx.author
-        msg = await ctx.send(embed=ce("⏳", f"> Меняю цвет **[{gd['tag']}]**...", ctx.guild))
-        await rebuild(ctx.guild, gd, owner)
+        owner = inter.guild.get_member(int(gd["owner_id"])) or inter.author
+        msg = await inter.response.send_message(embed=ce("⏳", f"> Меняю цвет **[{gd['tag']}]**...", inter.guild))
+        await rebuild(inter.guild, gd, owner)
         await msg.edit(embed=ce("✅", f"> **[{gd['tag']}]** → {COLORS[color.lower()]['label']}!",
-                                 ctx.guild, COLORS[color.lower()]["hex"]))
+                                 inter.guild, COLORS[color.lower()]["hex"]))
 
-    @commands.command(name="gforcedelete")
+    @commands.slash_command(description="Команда gforcedelete")
     @is_admin()
-    async def gforcedelete(self, ctx: commands.Context, *, tag: str):
-        sid = str(ctx.guild.id)
+    async def gforcedelete(self, inter: disnake.AppCommandInteraction, *, tag: str):
+        sid = str(inter.guild.id)
         gd  = guild_by_tag(sid, tag)
         if not gd:
-            await ctx.send(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", inter.guild, 0xFF0000))
             return
-        await self._dissolve_guild(ctx.guild, gd, sid)
-        await ctx.send(embed=ce("✅", f"> **[{gd['tag']}] {gd['name']}** удалена.", ctx.guild))
+        await self._dissolve_guild(inter.guild, gd, sid)
+        await inter.response.send_message(embed=ce("✅", f"> **[{gd['tag']}] {gd['name']}** удалена.", inter.guild))
 
-    @commands.command(name="gforcekick")
+    @commands.slash_command(description="Команда gforcekick")
     @is_admin()
-    async def gforcekick(self, ctx: commands.Context, member: disnake.Member):
-        uid, sid = str(member.id), str(ctx.guild.id)
+    async def gforcekick(self, inter: disnake.AppCommandInteraction, member: disnake.Member):
+        uid, sid = str(member.id), str(inter.guild.id)
         u = get_user(uid, sid)
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Admin", f"> **❌ {member.display_name} не в гильдии!**",
-                                     ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Admin", f"> **❌ {member.display_name} не в гильдии!**",
+                                     inter.guild, 0xFF0000))
             return
         gid = u["guild_id"]
         gd  = get_guild(gid)
@@ -2360,31 +2360,31 @@ class GuildCog(commands.Cog):
                 save_guild(gid, {"officers": officers})
         save_user(uid, sid, {"guild_id": None, "guild_rank": None})
         if gd:
-            await refresh_access(ctx.guild, gd, member, remove=True)
+            await refresh_access(inter.guild, gd, member, remove=True)
         try:
             if member.display_name.startswith("["):
                 clean = member.display_name.split("]", 1)[1].strip()
                 await member.edit(nick=clean or None)
         except Exception:
             pass
-        await ctx.send(embed=ce("👢 Force Kick",
-                                 f"> {member.mention} принудительно исключён(а).", ctx.guild, 0xFF4444))
+        await inter.response.send_message(embed=ce("👢 Force Kick",
+                                 f"> {member.mention} принудительно исключён(а).", inter.guild, 0xFF4444))
 
-    @commands.command(name="gforcejoin")
+    @commands.slash_command(description="Команда gforcejoin")
     @is_admin()
-    async def gforcejoin(self, ctx: commands.Context, member: disnake.Member, *, tag: str):
-        uid, sid = str(member.id), str(ctx.guild.id)
+    async def gforcejoin(self, inter: disnake.AppCommandInteraction, member: disnake.Member, *, tag: str):
+        uid, sid = str(member.id), str(inter.guild.id)
         gd = guild_by_tag(sid, tag)
         if not gd:
-            await ctx.send(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", inter.guild, 0xFF0000))
             return
         u = get_user(uid, sid)
         if u.get("guild_id"):
-            await ctx.send(embed=ce("Admin", f"> **❌ {member.display_name} уже в гильдии!**",
-                                     ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Admin", f"> **❌ {member.display_name} уже в гильдии!**",
+                                     inter.guild, 0xFF0000))
             return
         save_user(uid, sid, {"guild_id": gd["id"], "guild_rank": "member"})
-        await refresh_access(ctx.guild, gd, member)
+        await refresh_access(inter.guild, gd, member)
         try:
             old = member.display_name
             if old.startswith("[") and "]" in old:
@@ -2392,22 +2392,22 @@ class GuildCog(commands.Cog):
             await member.edit(nick=f"[{gd['tag']}] {old}"[:32])
         except Exception:
             pass
-        await ctx.send(embed=ce("✅ Force Join",
-                                 f"> {member.mention} добавлен(а) в **[{gd['tag']}]**.", ctx.guild))
+        await inter.response.send_message(embed=ce("✅ Force Join",
+                                 f"> {member.mention} добавлен(а) в **[{gd['tag']}]**.", inter.guild))
 
-    @commands.command(name="gsetowner")
+    @commands.slash_command(description="Команда gsetowner")
     @is_admin()
-    async def gsetowner(self, ctx: commands.Context, member: disnake.Member, *, tag: str):
-        sid = str(ctx.guild.id)
+    async def gsetowner(self, inter: disnake.AppCommandInteraction, member: disnake.Member, *, tag: str):
+        sid = str(inter.guild.id)
         gd  = guild_by_tag(sid, tag)
         if not gd:
-            await ctx.send(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", inter.guild, 0xFF0000))
             return
         uid = str(member.id)
         t   = get_user(uid, sid)
         if t.get("guild_id") != gd["id"]:
-            await ctx.send(embed=ce("Admin", f"> **❌ {member.display_name} не в этой гильдии!**",
-                                     ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Admin", f"> **❌ {member.display_name} не в этой гильдии!**",
+                                     inter.guild, 0xFF0000))
             return
         old_owner = gd.get("owner_id")
         if old_owner:
@@ -2417,112 +2417,112 @@ class GuildCog(commands.Cog):
             officers.remove(uid)
         save_guild(gd["id"], {"owner_id": uid, "officers": officers})
         save_user(uid, sid, {"guild_rank": "owner"})
-        await ctx.send(embed=ce("👑 Новый лидер",
-                                 f"> {member.mention} теперь лидер **[{gd['tag']}]**.", ctx.guild))
+        await inter.response.send_message(embed=ce("👑 Новый лидер",
+                                 f"> {member.mention} теперь лидер **[{gd['tag']}]**.", inter.guild))
 
-    @commands.command(name="gaddbank")
+    @commands.slash_command(description="Команда gaddbank")
     @is_admin()
-    async def gaddbank(self, ctx: commands.Context, tag: str, amount: int):
-        sid = str(ctx.guild.id)
+    async def gaddbank(self, inter: disnake.AppCommandInteraction, tag: str, amount: int):
+        sid = str(inter.guild.id)
         gd = guild_by_tag(sid, tag)
         if not gd:
-            await ctx.send(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Admin", f"> **❌ [{tag.upper()}] не найдена!**", inter.guild, 0xFF0000))
             return
         try:
             db["guilds"].update_one({"id": gd["id"]}, {"$inc": {"bank": amount}})
             new_bank = (gd.get("bank", 0) or 0) + amount
-            await ctx.send(embed=ce("💰 Казна пополнена",
-                                     f"> **[{gd['tag']}]** +{amount:,} монет\n> Казна: **{new_bank:,}**", ctx.guild))
+            await inter.response.send_message(embed=ce("💰 Казна пополнена",
+                                     f"> **[{gd['tag']}]** +{amount:,} монет\n> Казна: **{new_bank:,}**", inter.guild))
         except Exception as e:
-            await ctx.send(embed=ce("Ошибка", f"> **❌ Ошибка БД: {e}**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Ошибка", f"> **❌ Ошибка БД: {e}**", inter.guild, 0xFF0000))
 
-    @commands.command(name="givemoney")
+    @commands.slash_command(description="Команда givemoney")
     @is_admin()
-    async def givemoney(self, ctx: commands.Context, member: disnake.Member, amount: int):
-        uid, sid = str(member.id), str(ctx.guild.id)
+    async def givemoney(self, inter: disnake.AppCommandInteraction, member: disnake.Member, amount: int):
+        uid, sid = str(member.id), str(inter.guild.id)
         u = get_user(uid, sid)
         new_co = u.get("coins", 0) + amount
         save_user(uid, sid, {"coins": new_co})
-        await ctx.send(embed=ce("💰 Выдача", f"> {member.mention} **+{amount:,}** | Баланс: **{new_co:,}**",
-                                 ctx.guild))
+        await inter.response.send_message(embed=ce("💰 Выдача", f"> {member.mention} **+{amount:,}** | Баланс: **{new_co:,}**",
+                                 inter.guild))
 
-    @commands.command(name="takemoney")
+    @commands.slash_command(description="Команда takemoney")
     @is_admin()
-    async def takemoney(self, ctx: commands.Context, member: disnake.Member, amount: int):
-        uid, sid = str(member.id), str(ctx.guild.id)
+    async def takemoney(self, inter: disnake.AppCommandInteraction, member: disnake.Member, amount: int):
+        uid, sid = str(member.id), str(inter.guild.id)
         u = get_user(uid, sid)
         new_co = max(0, u.get("coins", 0) - amount)
         save_user(uid, sid, {"coins": new_co})
-        await ctx.send(embed=ce("Admin", f"> Изъято **{amount:,}** у {member.mention}\n> Баланс: **{new_co:,}**",
-                                 ctx.guild))
+        await inter.response.send_message(embed=ce("Admin", f"> Изъято **{amount:,}** у {member.mention}\n> Баланс: **{new_co:,}**",
+                                 inter.guild))
 
-    @commands.command(name="resetuser")
+    @commands.slash_command(description="Команда resetuser")
     @is_admin()
-    async def resetuser(self, ctx: commands.Context, member: disnake.Member):
-        db["users"].delete_one({"user_id": str(member.id), "server_id": str(ctx.guild.id)})
-        await ctx.send(embed=ce("Admin", f"> Данные {member.mention} сброшены.", ctx.guild))
+    async def resetuser(self, inter: disnake.AppCommandInteraction, member: disnake.Member):
+        db["users"].delete_one({"user_id": str(member.id), "server_id": str(inter.guild.id)})
+        await inter.response.send_message(embed=ce("Admin", f"> Данные {member.mention} сброшены.", inter.guild))
 
-    @commands.command(name="glistall")
+    @commands.slash_command(description="Команда glistall")
     @is_admin()
-    async def glistall(self, ctx: commands.Context):
-        sid = str(ctx.guild.id)
+    async def glistall(self, inter: disnake.AppCommandInteraction):
+        sid = str(inter.guild.id)
         try:
             gs = list(db["guilds"].find({"server_id": sid}))
         except Exception:
             gs = []
         if not gs:
-            await ctx.send("> Гильдий нет.")
+            await inter.response.send_message("> Гильдий нет.")
             return
         desc = "".join(f"> **[{g['tag']}] {g['name']}** (ID:{g['id']})\n" for g in gs)
-        await ctx.send(embed=ce("Все гильдии", desc, ctx.guild))
+        await inter.response.send_message(embed=ce("Все гильдии", desc, inter.guild))
 
-    @commands.command(name="setmessages")
+    @commands.slash_command(description="Команда setmessages")
     @is_admin()
-    async def setmessages(self, ctx: commands.Context, member: disnake.Member, amount: int):
-        save_user(str(member.id), str(ctx.guild.id), {"messages": amount})
-        await ctx.send(embed=ce("📝", f"> {member.mention}: **{amount:,}** сообщений", ctx.guild))
+    async def setmessages(self, inter: disnake.AppCommandInteraction, member: disnake.Member, amount: int):
+        save_user(str(member.id), str(inter.guild.id), {"messages": amount})
+        await inter.response.send_message(embed=ce("📝", f"> {member.mention}: **{amount:,}** сообщений", inter.guild))
 
-    @commands.command(name="setxp")
+    @commands.slash_command(description="Команда setxp")
     @is_admin()
-    async def setxp(self, ctx: commands.Context, member: disnake.Member, amount: int):
+    async def setxp(self, inter: disnake.AppCommandInteraction, member: disnake.Member, amount: int):
         lvl = calc_level(amount)
-        save_user(str(member.id), str(ctx.guild.id), {"xp": amount, "level": lvl})
-        await ctx.send(embed=ce("⭐ XP", f"> {member.mention}: **{amount:,}** XP | ур. **{lvl}**", ctx.guild))
+        save_user(str(member.id), str(inter.guild.id), {"xp": amount, "level": lvl})
+        await inter.response.send_message(embed=ce("⭐ XP", f"> {member.mention}: **{amount:,}** XP | ур. **{lvl}**", inter.guild))
 
-    @commands.command(name="gcleardata")
+    @commands.slash_command(description="Команда gcleardata")
     @is_admin()
-    async def gcleardata(self, ctx: commands.Context, member: disnake.Member):
-        db["users"].delete_one({"user_id": str(member.id), "server_id": str(ctx.guild.id)})
-        await ctx.send(embed=ce("🗑️ Сброс", f"> Данные {member.mention} сброшены.", ctx.guild, 0xFF4444))
+    async def gcleardata(self, inter: disnake.AppCommandInteraction, member: disnake.Member):
+        db["users"].delete_one({"user_id": str(member.id), "server_id": str(inter.guild.id)})
+        await inter.response.send_message(embed=ce("🗑️ Сброс", f"> Данные {member.mention} сброшены.", inter.guild, 0xFF4444))
 
-    @commands.command(name="stats")
+    @commands.slash_command(description="Команда stats")
     @is_admin()
-    async def stats(self, ctx: commands.Context):
-        sid = str(ctx.guild.id)
+    async def stats(self, inter: disnake.AppCommandInteraction):
+        sid = str(inter.guild.id)
         try:
             gs_list = list(db["guilds"].find({"server_id": sid}))
             us_list = list(db["users"].find({"server_id": sid}))
         except Exception:
             gs_list, us_list = [], []
-        await ctx.send(embed=ce("📊 Статистика",
+        await inter.response.send_message(embed=ce("📊 Статистика",
                                  f"> 🏰 Гильдий: **{len(gs_list)}**\n"
                                  f"> 👤 Игроков: **{len(us_list)}**\n"
                                  f"> 💰 Монет: **{sum(u.get('coins',0) for u in us_list):,}**\n"
                                  f"> ⭐ XP: **{sum(u.get('xp',0) for u in us_list):,}**\n"
                                  f"> 💬 Сообщений: **{sum(u.get('messages',0) for u in us_list):,}**",
-                                 ctx.guild))
+                                 inter.guild))
 
-    @commands.command(name="gsetcalendar")
+    @commands.slash_command(description="Команда gsetcalendar")
     @is_admin()
-    async def gsetcalendar(self, ctx: commands.Context, channel: disnake.TextChannel):
-        save_settings(str(ctx.guild.id), {SEASON_CH_KEY: channel.id})
-        await ctx.send(embed=ce("✅", f"> Анонсы → {channel.mention}", ctx.guild))
+    async def gsetcalendar(self, inter: disnake.AppCommandInteraction, channel: disnake.TextChannel):
+        save_settings(str(inter.guild.id), {SEASON_CH_KEY: channel.id})
+        await inter.response.send_message(embed=ce("✅", f"> Анонсы → {channel.mention}", inter.guild))
 
-    @commands.command(name="gsetmsg")
+    @commands.slash_command(description="Команда gsetmsg")
     @is_admin()
-    async def gsetmsg(self, ctx: commands.Context, amount: int):
-        save_settings(str(ctx.guild.id), {"msg_required": amount})
-        await ctx.send(embed=ce("⚙️", f"> Порог создания гильдии: **{amount}** сообщений", ctx.guild))
+    async def gsetmsg(self, inter: disnake.AppCommandInteraction, amount: int):
+        save_settings(str(inter.guild.id), {"msg_required": amount})
+        await inter.response.send_message(embed=ce("⚙️", f"> Порог создания гильдии: **{amount}** сообщений", inter.guild))
 
     # ══════════════════════════════════════════════════════════
     # 🌸❄️ ИВЕНТ
@@ -2537,10 +2537,10 @@ class GuildCog(commands.Cog):
     def _stitle(self, s: str) -> str:
         return "❄️ Конец Зимы" if s == "winter" else "🌸 Начало Весны"
 
-    @commands.command(name="gseason")
+    @commands.slash_command(description="Команда gseason")
     @commands.cooldown(*COOLDOWNS["info_light"], commands.BucketType.user)
-    async def gseason(self, ctx: commands.Context):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    async def gseason(self, inter: disnake.AppCommandInteraction):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         s     = self._season()
         tasks = self._stasks(s)
         u = get_user(uid, sid)
@@ -2559,8 +2559,8 @@ class GuildCog(commands.Cog):
             desc += (f"> {t['emoji']} **{t['name']}** — {status}\n"
                      f"> _{t['desc']}_\n> [{bar}] 💰 {t['reward']:,}\n> _ _\n")
         col = 0x5BC8FF if s == "winter" else 0xFF69B4
-        await ctx.send(embed=ce(f"🎉 Ивент | {self._stitle(s)}", desc, ctx.guild, col),
-                       components=[season_claim_row(ctx.author.id, s)])
+        await inter.response.send_message(embed=ce(f"🎉 Ивент | {self._stitle(s)}", desc, inter.guild, col),
+                       components=[season_claim_row(inter.author.id, s)])
 
     async def _prog(self, uid: str, sid: str, task_id: str, n: int = 1):
         u  = get_user(uid, sid)
@@ -2571,80 +2571,80 @@ class GuildCog(commands.Cog):
             pr[task_id] = min(pr.get(task_id, 0) + n, t["goal"])
             save_user(uid, sid, {"event_progress": pr})
 
-    @commands.command(name="snowball")
+    @commands.slash_command(description="Команда snowball")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def snowball(self, ctx: commands.Context, target: disnake.Member = None):
-        await self._prog(str(ctx.author.id), str(ctx.guild.id), "wt_snow")
+    async def snowball(self, inter: disnake.AppCommandInteraction, target: disnake.Member = None):
+        await self._prog(str(inter.author.id), str(inter.guild.id), "wt_snow")
         t = f"в {target.mention}" if target else "в воздух"
-        await ctx.send(embed=ce("❄️ Снежок!", f"> {ctx.author.mention} кинул снежок {t}! ❄️",
-                                 ctx.guild, 0x5BC8FF))
+        await inter.response.send_message(embed=ce("❄️ Снежок!", f"> {inter.author.mention} кинул снежок {t}! ❄️",
+                                 inter.guild, 0x5BC8FF))
 
-    @commands.command(name="warm")
+    @commands.slash_command(description="Команда warm")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def warm(self, ctx: commands.Context, member: disnake.Member):
-        if member.id == ctx.author.id:
-            await ctx.send(embed=ce("Тепло", "> **❌ Нельзя себе!**", ctx.guild, 0xFF0000))
+    async def warm(self, inter: disnake.AppCommandInteraction, member: disnake.Member):
+        if member.id == inter.author.id:
+            await inter.response.send_message(embed=ce("Тепло", "> **❌ Нельзя себе!**", inter.guild, 0xFF0000))
             return
-        await self._prog(str(ctx.author.id), str(ctx.guild.id), "wt_warm")
-        await ctx.send(embed=ce("🔥 Тепло!", f"> {ctx.author.mention} поделился теплом с {member.mention}! 🧣",
-                                 ctx.guild, 0xFF8C00))
+        await self._prog(str(inter.author.id), str(inter.guild.id), "wt_warm")
+        await inter.response.send_message(embed=ce("🔥 Тепло!", f"> {inter.author.mention} поделился теплом с {member.mention}! 🧣",
+                                 inter.guild, 0xFF8C00))
 
-    @commands.command(name="snowman")
+    @commands.slash_command(description="Команда snowman")
     @commands.cooldown(*COOLDOWNS["super_heavy"], commands.BucketType.user)
-    async def snowman(self, ctx: commands.Context):
-        await self._prog(str(ctx.author.id), str(ctx.guild.id), "wt_man")
-        await ctx.send(embed=ce("⛄ Снеговик!", f"> {ctx.author.mention} слепил снеговика! ⛄🥕",
-                                 ctx.guild, 0x5BC8FF))
+    async def snowman(self, inter: disnake.AppCommandInteraction):
+        await self._prog(str(inter.author.id), str(inter.guild.id), "wt_man")
+        await inter.response.send_message(embed=ce("⛄ Снеговик!", f"> {inter.author.mention} слепил снеговика! ⛄🥕",
+                                 inter.guild, 0x5BC8FF))
 
-    @commands.command(name="gpatrol")
+    @commands.slash_command(description="Команда gpatrol")
     @commands.cooldown(*COOLDOWNS["wars"], commands.BucketType.user)
-    async def gpatrol(self, ctx: commands.Context):
-        u = get_user(str(ctx.author.id), str(ctx.guild.id))
+    async def gpatrol(self, inter: disnake.AppCommandInteraction):
+        u = get_user(str(inter.author.id), str(inter.guild.id))
         if not u.get("guild_id"):
-            await ctx.send(embed=ce("Патруль", "> **❌ Ты не в гильдии!**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Патруль", "> **❌ Ты не в гильдии!**", inter.guild, 0xFF0000))
             return
-        await self._prog(str(ctx.author.id), str(ctx.guild.id), "wt_patrol")
+        await self._prog(str(inter.author.id), str(inter.guild.id), "wt_patrol")
         msg = random.choice(["🛡️ Враги разбежались!", "❄️ Патруль прошёл!", "⚔️ Граница под защитой!"])
-        await ctx.send(embed=ce("🛡️ Патруль!", f"> {msg}", ctx.guild, 0x4A90D9))
+        await inter.response.send_message(embed=ce("🛡️ Патруль!", f"> {msg}", inter.guild, 0x4A90D9))
 
-    @commands.command(name="flower")
+    @commands.slash_command(description="Команда flower")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def flower(self, ctx: commands.Context):
-        await self._prog(str(ctx.author.id), str(ctx.guild.id), "sp_flower")
+    async def flower(self, inter: disnake.AppCommandInteraction):
+        await self._prog(str(inter.author.id), str(inter.guild.id), "sp_flower")
         f = random.choice(["🌸 Сакура", "🌷 Тюльпан", "🌺 Гибискус", "🌻 Подсолнух", "🌼 Ромашка"])
-        await ctx.send(embed=ce("🌸 Сбор!", f"> {ctx.author.mention} нашёл **{f}**!", ctx.guild, 0xFF69B4))
+        await inter.response.send_message(embed=ce("🌸 Сбор!", f"> {inter.author.mention} нашёл **{f}**!", inter.guild, 0xFF69B4))
 
-    @commands.command(name="plant")
+    @commands.slash_command(description="Команда plant")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def plant(self, ctx: commands.Context, member: disnake.Member):
-        if member.id == ctx.author.id:
-            await ctx.send(embed=ce("Посадка", "> **❌ Нельзя себе!**", ctx.guild, 0xFF0000))
+    async def plant(self, inter: disnake.AppCommandInteraction, member: disnake.Member):
+        if member.id == inter.author.id:
+            await inter.response.send_message(embed=ce("Посадка", "> **❌ Нельзя себе!**", inter.guild, 0xFF0000))
             return
-        await self._prog(str(ctx.author.id), str(ctx.guild.id), "sp_plant")
-        await ctx.send(embed=ce("🌱 Посадка!", f"> {ctx.author.mention} посадил цветок для {member.mention}! 🌷",
-                                 ctx.guild, 0x2ECC71))
+        await self._prog(str(inter.author.id), str(inter.guild.id), "sp_plant")
+        await inter.response.send_message(embed=ce("🌱 Посадка!", f"> {inter.author.mention} посадил цветок для {member.mention}! 🌷",
+                                 inter.guild, 0x2ECC71))
 
-    @commands.command(name="spring_rain")
+    @commands.slash_command(description="Команда spring_rain")
     @commands.cooldown(*COOLDOWNS["super_heavy"], commands.BucketType.user)
-    async def spring_rain(self, ctx: commands.Context):
-        await self._prog(str(ctx.author.id), str(ctx.guild.id), "sp_rain")
-        await ctx.send(embed=ce("🌧️ Весенний дождь!",
-                                 f"> {ctx.author.mention} призвал весенний дождь! 🌧️🌸",
-                                 ctx.guild, 0xFF69B4))
+    async def spring_rain(self, inter: disnake.AppCommandInteraction):
+        await self._prog(str(inter.author.id), str(inter.guild.id), "sp_rain")
+        await inter.response.send_message(embed=ce("🌧️ Весенний дождь!",
+                                 f"> {inter.author.mention} призвал весенний дождь! 🌧️🌸",
+                                 inter.guild, 0xFF69B4))
 
     # ══════════════════════════════════════════════════════════
     # 🌾 СИСТЕМА ФЕРМ (ПАССИВНЫЙ ДОХОД)
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="buyfarm", aliases=["farm"])
+    @commands.slash_command(description="Команда buyfarm")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def buyfarm(self, ctx: commands.Context, farm_name: str = None):
+    async def buyfarm(self, inter: disnake.AppCommandInteraction, farm_name: str = None):
         """Купить ферму для пассивного дохода"""
         if not INCOME_SOURCES:
-            await ctx.send(embed=ce("Ошибка", "> **❌ Система ферм недоступна**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Ошибка", "> **❌ Система ферм недоступна**", inter.guild, 0xFF0000))
             return
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         lvl = u.get("level", 1)
         
@@ -2663,35 +2663,35 @@ class GuildCog(commands.Cog):
                         desc += f"> {status} `{farm_key}` — {farm['name']} ({farm['price']:,} монет)\n"
                         desc += f">    +{farm['income_per_hour']:,}/ч — окуп. {calculate_farm_payback_days(farm_key):.1f} дня\n"
             
-            await ctx.send(embed=ce("🌾 Каталог ферм",
+            await inter.response.send_message(embed=ce("🌾 Каталог ферм",
                                     desc + f"\n> _ _\n> Используй: `!buyfarm <название>`",
-                                    ctx.guild))
+                                    inter.guild))
             return
         
         farm_key = farm_name.lower()
         if farm_key not in INCOME_SOURCES:
-            await ctx.send(embed=ce("Ошибка", f"> **❌ Ферма '{farm_name}' не найдена**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Ошибка", f"> **❌ Ферма '{farm_name}' не найдена**", inter.guild, 0xFF0000))
             return
         
         farm = INCOME_SOURCES[farm_key]
         if u.get("coins", 0) < farm["price"]:
             need = farm["price"] - u.get("coins", 0)
-            await ctx.send(embed=ce("Покупка ферм",
+            await inter.response.send_message(embed=ce("Покупка ферм",
                                     f"> **❌ Не хватает {need:,} монет!**\n> Твой баланс: {u.get('coins', 0):,}",
-                                    ctx.guild, 0xFF0000))
+                                    inter.guild, 0xFF0000))
             return
         
         if lvl < farm.get("unlock_level", 1):
-            await ctx.send(embed=ce("Покупка ферм",
+            await inter.response.send_message(embed=ce("Покупка ферм",
                                     f"> **❌ Недостаточен уровень!**\n> Требуется ур. {farm.get('unlock_level', 1)}, у тебя {lvl}",
-                                    ctx.guild, 0xFF0000))
+                                    inter.guild, 0xFF0000))
             return
         
         farms = u.get("farms", [])
         if farm_key in farms:
-            await ctx.send(embed=ce("Покупка ферм",
+            await inter.response.send_message(embed=ce("Покупка ферм",
                                     f"> **⚠️ У тебя уже есть эта ферма!**",
-                                    ctx.guild, 0xFF8800))
+                                    inter.guild, 0xFF8800))
             return
         
         # Покупаем ферму
@@ -2699,30 +2699,30 @@ class GuildCog(commands.Cog):
         new_coins = u.get("coins", 0) - farm["price"]
         save_user(uid, sid, {"coins": new_coins, "farms": farms})
         
-        await ctx.send(embed=ce("🌾 Ферма куплена!",
+        await inter.response.send_message(embed=ce("🌾 Ферма куплена!",
                                 f"> {farm['emoji']} **{farm['name']}**\n> _ _\n"
                                 f"> 💰 **-{farm['price']:,} монет**\n"
                                 f"> 📈 **+{farm['income_per_hour']:,}** монет в час\n> _ _\n"
                                 f"> Новый баланс: **{new_coins:,}**",
-                                ctx.guild, farm['tier'] * 0x101010))
+                                inter.guild, farm['tier'] * 0x101010))
 
-    @commands.command(name="myfarms")
+    @commands.slash_command(description="Команда myfarms")
     @commands.cooldown(*COOLDOWNS["info_light"], commands.BucketType.user)
-    async def myfarms(self, ctx: commands.Context, member: disnake.Member = None):
+    async def myfarms(self, inter: disnake.AppCommandInteraction, member: disnake.Member = None):
         """Показывает твои фермы и пассивный доход"""
         if not INCOME_SOURCES:
-            await ctx.send(embed=ce("Ошибка", "> **❌ Система ферм недоступна**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Ошибка", "> **❌ Система ферм недоступна**", inter.guild, 0xFF0000))
             return
         
-        target = member or ctx.author
-        uid, sid = str(target.id), str(ctx.guild.id)
+        target = member or inter.author
+        uid, sid = str(target.id), str(inter.guild.id)
         u = get_user(uid, sid)
         farms = u.get("farms", [])
         
         if not farms:
-            await ctx.send(embed=ce("🌾 Твои фермы",
+            await inter.response.send_message(embed=ce("🌾 Твои фермы",
                                     f"> **{target.display_name}** ещё не имеет ферм\n> Начни с `!buyfarm`",
-                                    ctx.guild, 0xFF8800))
+                                    inter.guild, 0xFF8800))
             return
         
         total_income = get_income_per_hour(farms, get_guild(u.get("guild_id")).get("upgrades", []) if u.get("guild_id") else [])
@@ -2739,27 +2739,27 @@ class GuildCog(commands.Cog):
                     desc += f"> {farm['emoji']} **{farm['name']}** — +{farm['income_per_hour']:,}/ч\n"
                 desc += "> _ _\n"
         
-        e = ce("🌾 Твои фермы", desc, ctx.guild, 0x2ECC71)
-        if ctx.author == target:
+        e = ce("🌾 Твои фермы", desc, inter.guild, 0x2ECC71)
+        if inter.author == target:
             e.add_field(name="Совет", value="Используй `!harvest` каждый час для сбора дохода", inline=False)
-        await ctx.send(embed=e)
+        await inter.response.send_message(embed=e)
 
-    @commands.command(name="harvest")
+    @commands.slash_command(description="Команда harvest")
     @commands.cooldown(*COOLDOWNS["eco_medium"], commands.BucketType.user)
-    async def harvest(self, ctx: commands.Context):
+    async def harvest(self, inter: disnake.AppCommandInteraction):
         """Собрать доход от фермы (раз в час)"""
         if not INCOME_SOURCES:
-            await ctx.send(embed=ce("Ошибка", "> **❌ Система ферм недоступна**", ctx.guild, 0xFF0000))
+            await inter.response.send_message(embed=ce("Ошибка", "> **❌ Система ферм недоступна**", inter.guild, 0xFF0000))
             return
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         farms = u.get("farms", [])
         
         if not farms:
-            await ctx.send(embed=ce("🌾 При сборе урожая",
+            await inter.response.send_message(embed=ce("🌾 При сборе урожая",
                                     "> **❌ У тебя нет ферм!**\n> Купи ферму через `!buyfarm`",
-                                    ctx.guild, 0xFF0000))
+                                    inter.guild, 0xFF0000))
             return
         
         now = datetime.utcnow()
@@ -2772,9 +2772,9 @@ class GuildCog(commands.Cog):
                 if diff.total_seconds() < 3600:  # Минимум час
                     rem = 3600 - diff.total_seconds()
                     m = int(rem // 60)
-                    await ctx.send(embed=ce("🌾 При сборе урожая",
+                    await inter.response.send_message(embed=ce("🌾 При сборе урожая",
                                            f"> ⏰ Уже собирал сегодня!\n> Возвращайся через **{m} минут**",
-                                           ctx.guild, 0xFF8800))
+                                           inter.guild, 0xFF8800))
                     return
             except Exception:
                 pass
@@ -2802,13 +2802,13 @@ class GuildCog(commands.Cog):
         if gd and guild_contribution > 0:
             save_guild(gd["id"], {"bank": gd.get("bank", 0) + guild_contribution})
         
-        desc = f"> {ctx.author.mention} собрал урожай!\n> _ _\n"
+        desc = f"> {inter.author.mention} собрал урожай!\n> _ _\n"
         desc += f"> 💰 **+{player_income:,}** монет (за час)\n"
         if guild_contribution > 0:
             desc += f"> 🏰 **+{guild_contribution:,}** в казну гильдии ({vault_bonus*100-100:.0f}%)\n"
         desc += f"> _ _\n> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("🌾 Сбор урожая!", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("🌾 Сбор урожая!", desc, inter.guild, 0x2ECC71))
 
     # ══════════════════════════════════════════════════════════
     # 🏅 ФОНОВАЯ ЗАДАЧА ПРОВЕРКИ БАФФОВ
@@ -2964,18 +2964,18 @@ class GuildCog(commands.Cog):
 
     # ── Баффы и Верификация ─────────────────────────────────
 
-    @commands.command(name="mybadge")
-    async def mybadge(self, ctx: commands.Context, user: Optional[disnake.Member] = None):
+    @commands.slash_command(description="Команда mybadge")
+    async def mybadge(self, inter: disnake.AppCommandInteraction, user: Optional[disnake.Member] = None):
         """Показывает текущий статус баффа участника."""
-        target = user or ctx.author
+        target = user or inter.author
         home_server = self.bot.get_guild(HOME_SERVER_ID)
         if not home_server:
-            await ctx.send("❌ Главный сервер не найден", delete_after=10)
+            await inter.response.send_message("❌ Главный сервер не найден", delete_after=10)
             return
         
         member = home_server.get_member(target.id)
         if not member:
-            await ctx.send("❌ Участник не найден на главном сервере", delete_after=10)
+            await inter.response.send_message("❌ Участник не найден на главном сервере", delete_after=10)
             return
         
         badge_level = await check_member_profile(member)
@@ -2995,20 +2995,20 @@ class GuildCog(commands.Cog):
                 bio_val = ''
             desc += f"\n> Ссылка на сервер: {'✅' if 'discord.gg' in bio_val.lower() else '❌'}"
         
-        await ctx.send(embed=ce("🏅 Статус баффа", desc, ctx.guild))
+        await inter.response.send_message(embed=ce("🏅 Статус баффа", desc, inter.guild))
 
-    @commands.command(name="badgestatus")
+    @commands.slash_command(description="Команда badgestatus")
     @commands.has_permissions(administrator=True)
-    async def badgestatus(self, ctx: commands.Context, user: disnake.Member):
+    async def badgestatus(self, inter: disnake.AppCommandInteraction, user: disnake.Member):
         """[Админ] Показывает статус баффа участника и детали профиля."""
         home_server = self.bot.get_guild(HOME_SERVER_ID)
         if not home_server:
-            await ctx.send("❌ Главный сервер не найден", delete_after=10)
+            await inter.response.send_message("❌ Главный сервер не найден", delete_after=10)
             return
         
         member = home_server.get_member(user.id)
         if not member:
-            await ctx.send("❌ Участник не найден на главном сервере", delete_after=10)
+            await inter.response.send_message("❌ Участник не найден на главном сервере", delete_after=10)
             return
         
         badge_level = await check_member_profile(member)
@@ -3031,19 +3031,19 @@ class GuildCog(commands.Cog):
             if role:
                 desc += f"**Роль:** {role.mention}"
         
-        await ctx.send(embed=ce("🏅 Детали баффа", desc, ctx.guild))
+        await inter.response.send_message(embed=ce("🏅 Детали баффа", desc, inter.guild))
 
-    @commands.command(name="verifyall")
+    @commands.slash_command(description="Команда verifyall")
     @commands.is_owner()
-    async def verifyall(self, ctx: commands.Context):
+    async def verifyall(self, inter: disnake.AppCommandInteraction):
         """[Владелец] Принудительно проверить всех участников главного сервера."""
         global _member_badge_cache
         home_server = self.bot.get_guild(HOME_SERVER_ID)
         if not home_server:
-            await ctx.send("❌ Главный сервер не найден", delete_after=10)
+            await inter.response.send_message("❌ Главный сервер не найден", delete_after=10)
             return
         
-        msg = await ctx.send("⏳ Проверка всех участников...")
+        msg = await inter.response.send_message("⏳ Проверка всех участников...")
         checked = 0
         now = datetime.utcnow().timestamp()
         
@@ -3059,15 +3059,15 @@ class GuildCog(commands.Cog):
         
         await msg.edit(content=f"✅ Проверено **{checked}** участников | Обновлено кэш баффов")
 
-    @commands.command(name="applyretro")
+    @commands.slash_command(description="Команда applyretro")
     @commands.is_owner()
-    async def applyretro(self, ctx: commands.Context):
+    async def applyretro(self, inter: disnake.AppCommandInteraction):
         """
         [Владелец] Ретроактивно применить роли гильдий для всех существующих членов.
         Создаёт роли для гильдий, у которых их ещё нет.
         """
-        msg = await ctx.send("⏳ Применение к существующим гильдиям...")
-        sid = str(ctx.guild.id)
+        msg = await inter.response.send_message("⏳ Применение к существующим гильдиям...")
+        sid = str(inter.guild.id)
         
         try:
             guilds_data = list(db["guilds"].find({"server_id": sid}))
@@ -3088,13 +3088,13 @@ class GuildCog(commands.Cog):
             guild_role = None
             
             if guild_role_id:
-                guild_role = ctx.guild.get_role(guild_role_id)
+                guild_role = inter.guild.get_role(guild_role_id)
             
             # Создаём роль если её нет
             if not guild_role:
                 try:
                     guild_color = COLORS.get(gd.get("color", DEFAULT_COLOR), {}).get("hex", 0x3498DB)
-                    guild_role = await ctx.guild.create_role(
+                    guild_role = await inter.guild.create_role(
                         name=f"[{gd['tag']}] Члены",
                         color=disnake.Color(guild_color),
                         reason="Ретроактивное создание роли гильдии"
@@ -3114,7 +3114,7 @@ class GuildCog(commands.Cog):
                         continue
                     
                     try:
-                        member = ctx.guild.get_member(int(mid))
+                        member = inter.guild.get_member(int(mid))
                         if member and guild_role not in member.roles:
                             await member.add_roles(guild_role, reason="Ретроактивное применение")
                             applied_members += 1
@@ -3134,24 +3134,24 @@ class GuildCog(commands.Cog):
     # 🎰 КАЗИНО
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="blackjack")
+    @commands.slash_command(description="Команда blackjack")
     @commands.cooldown(1, 5, commands.BucketType.user)
-    async def blackjack(self, ctx: commands.Context, bet: int = 100):
+    async def blackjack(self, inter: disnake.AppCommandInteraction, bet: int = 100):
         """🃏 Играть в блэкджек! Введи сумму ставки."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         
         if bet < 50 or bet > 100000:
-            await ctx.send(embed=ce("🃏 Блэкджек", 
+            await inter.response.send_message(embed=ce("🃏 Блэкджек", 
                                      "> Ставка должна быть от **50** до **100,000**!", 
-                                     ctx.guild, 0xFF8800), delete_after=10)
+                                     inter.guild, 0xFF8800), delete_after=10)
             return
         
         if coins < bet:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{bet:,}**, а у тебя **{coins:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Симуляция игры
@@ -3173,26 +3173,26 @@ class GuildCog(commands.Cog):
             desc = f"> {emoji} Потеряно **-{bet:,}** монет\n> Баланс: **{new_coins:,}**"
         
         cards = ["🂡","🂮","🂭","🂬"]
-        await ctx.send(embed=ce(title, f"{' '.join(cards[:2])} vs {' '.join(cards[2:])}\n" + desc, ctx.guild, 0x2ECC71 if win_chance else 0xE74C3C))
+        await inter.response.send_message(embed=ce(title, f"{' '.join(cards[:2])} vs {' '.join(cards[2:])}\n" + desc, inter.guild, 0x2ECC71 if win_chance else 0xE74C3C))
 
-    @commands.command(name="slots")
+    @commands.slash_command(description="Команда slots")
     @commands.cooldown(1, 5, commands.BucketType.user)
-    async def slots(self, ctx: commands.Context, bet: int = 100):
+    async def slots(self, inter: disnake.AppCommandInteraction, bet: int = 100):
         """🍒 Крутить слоты! Попади в комбо для выигрыша."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         
         if bet < 25 or bet > 150000:
-            await ctx.send(embed=ce("🍒 Слоты", 
+            await inter.response.send_message(embed=ce("🍒 Слоты", 
                                      "> Ставка должна быть от **25** до **150,000**!", 
-                                     ctx.guild, 0xFF8800), delete_after=10)
+                                     inter.guild, 0xFF8800), delete_after=10)
             return
         
         if coins < bet:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{bet:,}**, а у тебя **{coins:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         import random
@@ -3218,26 +3218,26 @@ class GuildCog(commands.Cog):
             desc += f"> Потеряно **-{bet:,}** монет"
         desc += f"\n> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("🍒 Слоты", desc, ctx.guild, 0x2ECC71 if winnings > 0 else 0xE74C3C))
+        await inter.response.send_message(embed=ce("🍒 Слоты", desc, inter.guild, 0x2ECC71 if winnings > 0 else 0xE74C3C))
 
-    @commands.command(name="coinflip")
+    @commands.slash_command(description="Команда coinflip")
     @commands.cooldown(1, 3, commands.BucketType.user)
-    async def coinflip(self, ctx: commands.Context, bet: int = 100, choice: str = "heads"):
+    async def coinflip(self, inter: disnake.AppCommandInteraction, bet: int = 100, choice: str = "heads"):
         """🪙 Орёл или решка? Выбери heads или tails."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         
         if bet < 50 or bet > 200000:
-            await ctx.send(embed=ce("🪙 Орёл-Решка", 
+            await inter.response.send_message(embed=ce("🪙 Орёл-Решка", 
                                      "> Ставка должна быть от **50** до **200,000**!", 
-                                     ctx.guild, 0xFF8800), delete_after=10)
+                                     inter.guild, 0xFF8800), delete_after=10)
             return
         
         if coins < bet:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{bet:,}**, а у тебя **{coins:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         import random
@@ -3262,26 +3262,26 @@ class GuildCog(commands.Cog):
             desc += f"> ❌ **-{bet:,}** монет"
         desc += f"\n> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("🪙 Орёл-Решка", desc, ctx.guild, 0x2ECC71 if win else 0xE74C3C))
+        await inter.response.send_message(embed=ce("🪙 Орёл-Решка", desc, inter.guild, 0x2ECC71 if win else 0xE74C3C))
 
-    @commands.command(name="roulette")
+    @commands.slash_command(description="Команда roulette")
     @commands.cooldown(1, 5, commands.BucketType.user)
-    async def roulette(self, ctx: commands.Context, bet: int = 100, choice: str = "red"):
+    async def roulette(self, inter: disnake.AppCommandInteraction, bet: int = 100, choice: str = "red"):
         """🎡 Рулетка! Выбери red, black или число 1-36."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         
         if bet < 100 or bet > 50000:
-            await ctx.send(embed=ce("🎡 Рулетка", 
+            await inter.response.send_message(embed=ce("🎡 Рулетка", 
                                      "> Ставка должна быть от **100** до **50,000**!", 
-                                     ctx.guild, 0xFF8800), delete_after=10)
+                                     inter.guild, 0xFF8800), delete_after=10)
             return
         
         if coins < bet:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{bet:,}**, а у тебя **{coins:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         import random
@@ -3305,7 +3305,7 @@ class GuildCog(commands.Cog):
                     win = True
                     winnings = int(bet * 36)
             except ValueError:
-                await ctx.send(embed=ce("❌", "> Выбери red, black или число 1-36!", ctx.guild, 0xFF0000), delete_after=10)
+                await inter.response.send_message(embed=ce("❌", "> Выбери red, black или число 1-36!", inter.guild, 0xFF0000), delete_after=10)
                 return
         
         new_coins = coins + (winnings - bet) if win else coins - bet
@@ -3318,30 +3318,30 @@ class GuildCog(commands.Cog):
             desc += f"> ❌ Проиграл **-{bet:,}** монет"
         desc += f"\n> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("🎡 Рулетка", desc, ctx.guild, 0x2ECC71 if win else 0xE74C3C))
+        await inter.response.send_message(embed=ce("🎡 Рулетка", desc, inter.guild, 0x2ECC71 if win else 0xE74C3C))
 
-    @commands.command(name="dice")
+    @commands.slash_command(description="Команда dice")
     @commands.cooldown(1, 5, commands.BucketType.user)
-    async def dice(self, ctx: commands.Context, bet: int = 100, guess: int = 3):
+    async def dice(self, inter: disnake.AppCommandInteraction, bet: int = 100, guess: int = 3):
         """🎲 Кубики! Угадай результат бросания двух кубиков (2-12)."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         
         if bet < 75 or bet > 75000:
-            await ctx.send(embed=ce("🎲 Кубики", 
+            await inter.response.send_message(embed=ce("🎲 Кубики", 
                                      "> Ставка должна быть от **75** до **75,000**!", 
-                                     ctx.guild, 0xFF8800), delete_after=10)
+                                     inter.guild, 0xFF8800), delete_after=10)
             return
         
         if guess < 2 or guess > 12:
-            await ctx.send(embed=ce("❌", "> Число должно быть от 2 до 12!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Число должно быть от 2 до 12!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         if coins < bet:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{bet:,}**, а у тебя **{coins:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         import random
@@ -3363,14 +3363,14 @@ class GuildCog(commands.Cog):
             desc += f"> ❌ Неправильно! Потеря **-{bet:,}** монет"
         desc += f"\n> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("🎲 Кубики", desc, ctx.guild, 0x2ECC71 if win else 0xE74C3C))
+        await inter.response.send_message(embed=ce("🎲 Кубики", desc, inter.guild, 0x2ECC71 if win else 0xE74C3C))
 
     # ══════════════════════════════════════════════════════════
     # 📊 РЫНОК И ТОРГОВЛЯ
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="market")
-    async def market(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда market")
+    async def market(self, inter: disnake.AppCommandInteraction):
         """📊 Посмотреть цены на рынке."""
         from economy import MARKET_GOODS
         import random
@@ -3384,32 +3384,32 @@ class GuildCog(commands.Cog):
             arrow = "📈" if current_price > base else "📉" if current_price < base else "➡️"
             desc += f"> {good['emoji']} {good['name']}: **{current_price:,}** монет {arrow}\n"
         
-        await ctx.send(embed=ce("📊 Рыночные Цены", desc, ctx.guild, 0x3498DB))
+        await inter.response.send_message(embed=ce("📊 Рыночные Цены", desc, inter.guild, 0x3498DB))
 
-    @commands.command(name="invest")
+    @commands.slash_command(description="Команда invest")
     @commands.cooldown(1, 60, commands.BucketType.user)
-    async def invest(self, ctx: commands.Context, plan: str = "short_term", amount: int = 10000):
+    async def invest(self, inter: disnake.AppCommandInteraction, plan: str = "short_term", amount: int = 10000):
         """🏦 Инвестировать в план. Выбор: short_term, medium_term, long_term, guild_fund"""
         from economy import INVESTMENT_PLANS
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         
         if plan not in INVESTMENT_PLANS:
-            await ctx.send(embed=ce("❌", f"> План '{plan}' не найден!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", f"> План '{plan}' не найден!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         inv_plan = INVESTMENT_PLANS[plan]
         if amount < inv_plan["min_investment"] or amount > inv_plan["max_investment"]:
-            await ctx.send(embed=ce("❌", 
+            await inter.response.send_message(embed=ce("❌", 
                 f"> Сумма должна быть от **{inv_plan['min_investment']:,}** до **{inv_plan['max_investment']:,}**!", 
-                ctx.guild, 0xFF0000), delete_after=10)
+                inter.guild, 0xFF0000), delete_after=10)
             return
         
         if coins < amount:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{amount:,}**, а у тебя **{coins:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Вычисляем прибыль
@@ -3427,27 +3427,27 @@ class GuildCog(commands.Cog):
         desc += f"> 📅 Срок: **{days} дней**\n"
         desc += f"> Возврат: **{amount + profit:,}** монет"
         
-        await ctx.send(embed=ce("🏦 Инвестиция", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("🏦 Инвестиция", desc, inter.guild, 0x2ECC71))
 
-    @commands.command(name="lottery")
+    @commands.slash_command(description="Команда lottery")
     @commands.cooldown(1, 10, commands.BucketType.user)
-    async def lottery(self, ctx: commands.Context, ticket_type: str = "common"):
+    async def lottery(self, inter: disnake.AppCommandInteraction, ticket_type: str = "common"):
         """🎫 Купить лотерейный билет! Типы: common, rare, epic, legendary"""
         from economy import LOTTERY_TICKETS
         import random
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         
         if ticket_type not in LOTTERY_TICKETS:
-            await ctx.send(embed=ce("❌", "> Неверный тип билета!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Неверный тип билета!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         ticket = LOTTERY_TICKETS[ticket_type]
         if coins < ticket["price"]:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{ticket['price']:,}**, а у тебя **{coins:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Розыгрыш
@@ -3463,14 +3463,14 @@ class GuildCog(commands.Cog):
         
         save_user(uid, sid, {"coins": new_coins})
         
-        await ctx.send(embed=ce(ticket["name"], desc, ctx.guild, 0x2ECC71 if win else 0xE74C3C))
+        await inter.response.send_message(embed=ce(ticket["name"], desc, inter.guild, 0x2ECC71 if win else 0xE74C3C))
 
     # ══════════════════════════════════════════════════════════
     # 🎊 ЕЖЕДНЕВНЫЕ КВЕСТЫ
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="quests")
-    async def quests(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда quests")
+    async def quests(self, inter: disnake.AppCommandInteraction):
         """🎊 Посмотреть доступные ежедневные квесты и награды."""
         from economy import DAILY_QUESTS
         
@@ -3480,21 +3480,21 @@ class GuildCog(commands.Cog):
             desc += f"  _{q['description']}_\n"
             desc += f"  Цель: **{q['goal']}** | Награда: **{q['reward']:,}** монет\n\n"
         
-        await ctx.send(embed=ce("🎊 Ежедневные Квесты", desc, ctx.guild, 0x9B59B6))
+        await inter.response.send_message(embed=ce("🎊 Ежедневные Квесты", desc, inter.guild, 0x9B59B6))
 
     # ══════════════════════════════════════════════════════════
     # ⚔️ БОЕВАЯ СИСТЕМА
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="army")
-    async def army(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда army")
+    async def army(self, inter: disnake.AppCommandInteraction):
         """⚔️ Посмотреть армию гильдии."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         gid = u.get("guild_id")
         
         if not gid:
-            await ctx.send(embed=ce("❌", "> Ты не в гильдии!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты не в гильдии!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         gd = get_guild(gid)
@@ -3517,23 +3517,23 @@ class GuildCog(commands.Cog):
             total_power = int(total_power * 1.2)
             desc += f"\n> 🏗️ С технологией Железная пехота: **{total_power}**"
         
-        await ctx.send(embed=ce("⚔️ Армия Гильдии", desc, ctx.guild, 0xE74C3C))
+        await inter.response.send_message(embed=ce("⚔️ Армия Гильдии", desc, inter.guild, 0xE74C3C))
 
-    @commands.command(name="recruit")
+    @commands.slash_command(description="Команда recruit")
     @commands.cooldown(1, 10, commands.BucketType.user)
-    async def recruit(self, ctx: commands.Context, unit: str = "recruit", amount: int = 1):
+    async def recruit(self, inter: disnake.AppCommandInteraction, unit: str = "recruit", amount: int = 1):
         """⚔️ Нанять войска. Типы: recruit, soldier, knight, champion, legend"""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         gid = u.get("guild_id")
         
         if not gid:
-            await ctx.send(embed=ce("❌", "> Ты не в гильдии!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты не в гильдии!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         if unit not in ARMY_UNITS:
-            await ctx.send(embed=ce("❌", "> Такого юнита нет!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Такого юнита нет!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         unit_data = ARMY_UNITS[unit]
@@ -3545,9 +3545,9 @@ class GuildCog(commands.Cog):
             total_cost = int(total_cost * 0.8)
         
         if coins < total_cost:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{total_cost:,}**, а у тебя **{coins:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Нанимаем войска
@@ -3560,40 +3560,40 @@ class GuildCog(commands.Cog):
         desc += f"> Стоимость: **{total_cost:,}** монет\n"
         desc += f"> Новый баланс: **{coins - total_cost:,}**"
         
-        await ctx.send(embed=ce(f"✅ Нанято войск!", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce(f"✅ Нанято войск!", desc, inter.guild, 0x2ECC71))
 
-    @commands.command(name="attack")
+    @commands.slash_command(description="Команда attack")
     @commands.cooldown(1, 30, commands.BucketType.user)
-    async def attack(self, ctx: commands.Context, target_tag: str, attack_type: str = "raid"):
+    async def attack(self, inter: disnake.AppCommandInteraction, target_tag: str, attack_type: str = "raid"):
         """⚔️ Напасть на гильдию! Типы: raid, siege, conquest"""
         import random
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         gid = u.get("guild_id")
         
         if not gid:
-            await ctx.send(embed=ce("❌", "> Ты не в гильдии!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты не в гильдии!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Проверяем права
         if u.get("guild_rank") not in ["owner", "viceowner", "officer"]:
-            await ctx.send(embed=ce("❌", "> Только лидеры могут нападать!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Только лидеры могут нападать!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         gd = get_guild(gid)
         if attack_type not in ATTACK_TYPES:
-            await ctx.send(embed=ce("❌", "> Такого типа атаки нет!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Такого типа атаки нет!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         target_guild = guild_by_tag(sid, target_tag)
         if not target_guild:
-            await ctx.send(embed=ce("❌", f"> Гильдия [{target_tag}] не найдена!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", f"> Гильдия [{target_tag}] не найдена!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         if target_guild["id"] == gid:
-            await ctx.send(embed=ce("❌", "> Ты не можешь напасть на свою гильдию!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты не можешь напасть на свою гильдию!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Проверяем стоимость
@@ -3601,9 +3601,9 @@ class GuildCog(commands.Cog):
         cost = attack_data["cost"]
         
         if coins < cost:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{cost:,}**, а у тебя **{coins:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Вычисляем мощь
@@ -3653,17 +3653,17 @@ class GuildCog(commands.Cog):
             desc += f"> Новый баланс: **{coins - cost:,}**"
             color = 0xE74C3C
         
-        await ctx.send(embed=ce("⚔️ Боевой Результат", desc, ctx.guild, color))
+        await inter.response.send_message(embed=ce("⚔️ Боевой Результат", desc, inter.guild, color))
 
-    @commands.command(name="tech")
-    async def tech(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда tech")
+    async def tech(self, inter: disnake.AppCommandInteraction):
         """🔬 Посмотреть доступные технологии и улучшения."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         gid = u.get("guild_id")
         
         if not gid:
-            await ctx.send(embed=ce("❌", "> Ты не в гильдии!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты не в гильдии!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         gd = get_guild(gid)
@@ -3678,41 +3678,41 @@ class GuildCog(commands.Cog):
             desc += f"  {status}\n\n"
         
         desc += f"Баланс казны: **{coins:,}**"
-        await ctx.send(embed=ce("🔬 Технологии Гильдии", desc, ctx.guild, 0x9B59B6))
+        await inter.response.send_message(embed=ce("🔬 Технологии Гильдии", desc, inter.guild, 0x9B59B6))
 
-    @commands.command(name="buytech")
+    @commands.slash_command(description="Команда buytech")
     @commands.cooldown(1, 20, commands.BucketType.user)
-    async def buytech(self, ctx: commands.Context, tech_name: str):
+    async def buytech(self, inter: disnake.AppCommandInteraction, tech_name: str):
         """🔬 Купить технологию для гильдии."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         gid = u.get("guild_id")
         
         if not gid:
-            await ctx.send(embed=ce("❌", "> Ты не в гильдии!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты не в гильдии!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         if u.get("guild_rank") != "owner":
-            await ctx.send(embed=ce("❌", "> Только лидер может покупать технологии!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Только лидер может покупать технологии!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         if tech_name not in TECHNOLOGIES:
-            await ctx.send(embed=ce("❌", "> Такой технологии не существует!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Такой технологии не существует!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         gd = get_guild(gid)
         tech_list = gd.get("technologies", [])
         if tech_name in tech_list:
-            await ctx.send(embed=ce("❌", "> Эта технология уже куплена!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Эта технология уже куплена!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         tech_data = TECHNOLOGIES[tech_name]
         bank = gd.get("bank", 0)
         
         if bank < tech_data["cost"]:
-            await ctx.send(embed=ce("❌ Не хватает в казне",
+            await inter.response.send_message(embed=ce("❌ Не хватает в казне",
                                      f"> Нужно **{tech_data['cost']:,}**, а в казне **{bank:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         tech_list.append(tech_name)
@@ -3726,17 +3726,17 @@ class GuildCog(commands.Cog):
         desc += f"> Стоимость: **{tech_data['cost']:,}** монет\n"
         desc += f"> Новый баланс казны: **{bank - tech_data['cost']:,}**"
         
-        await ctx.send(embed=ce("✅ Технология Куплена!", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Технология Куплена!", desc, inter.guild, 0x2ECC71))
 
-    @commands.command(name="statss")
-    async def statss(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда statss")
+    async def statss(self, inter: disnake.AppCommandInteraction):
         """📊 Расширенная статистика гильдии с рейтингом."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         gid = u.get("guild_id")
         
         if not gid:
-            await ctx.send(embed=ce("❌", "> Ты не в гильдии!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты не в гильдии!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         gd = get_guild(gid)
@@ -3761,14 +3761,14 @@ class GuildCog(commands.Cog):
         desc += f"> 🏆 Побед: **{gd.get('wins', 0)}** | Поражений: **{gd.get('losses', 0)}**\n"
         desc += f"> 📊 Позиция в рейтинге: **#{rank} из {total_guilds}**"
         
-        await ctx.send(embed=ce("📊 Статистика Гильдии", desc, ctx.guild, 0x3498DB))
+        await inter.response.send_message(embed=ce("📊 Статистика Гильдии", desc, inter.guild, 0x3498DB))
 
-    @commands.command(name="achievements")
-    async def achievements(self, ctx: commands.Context, user: Optional[disnake.Member] = None):
+    @commands.slash_command(description="Команда achievements")
+    async def achievements(self, inter: disnake.AppCommandInteraction, user: Optional[disnake.Member] = None):
         """🏆 Посмотреть достижения."""
         from economy import ACHIEVEMENTS
-        target = user or ctx.author
-        uid, sid = str(target.id), str(ctx.guild.id)
+        target = user or inter.author
+        uid, sid = str(target.id), str(inter.guild.id)
         u = get_user(uid, sid)
         
         coins = u.get("coins", 0)
@@ -3790,24 +3790,24 @@ class GuildCog(commands.Cog):
             else:
                 desc += f"  Заблокировано\n\n"
         
-        await ctx.send(embed=ce("🏆 Достижения", desc, ctx.guild, 0xF1C40F))
+        await inter.response.send_message(embed=ce("🏆 Достижения", desc, inter.guild, 0xF1C40F))
 
     # ══════════════════════════════════════════════════════════
     # 💼 РЫНОК: ПОКУПКА И ПРОДАЖА
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="mbuy")
+    @commands.slash_command(description="Команда market_buy")
     @commands.cooldown(1, 5, commands.BucketType.user)
-    async def market_buy(self, ctx: commands.Context, good: str = None, quantity: int = 1):
+    async def market_buy(self, inter: disnake.AppCommandInteraction, good: str = None, quantity: int = 1):
         """💼 Купить товар на рынке! mbuy [товар] [кол-во]"""
         from economy import MARKET_GOODS
         import random
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         
         if not good or good not in MARKET_GOODS:
-            await ctx.send(embed=ce("❌", "> Товар не найден! mbuy ore 5", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Товар не найден! mbuy ore 5", inter.guild, 0xFF0000), delete_after=10)
             return
         
         good_data = MARKET_GOODS[good]
@@ -3817,9 +3817,9 @@ class GuildCog(commands.Cog):
         total_cost = current_price * quantity
         
         if coins < total_cost:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{total_cost:,}**, а у тебя **{coins:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Сохраняем покупку в инвентарь
@@ -3833,25 +3833,25 @@ class GuildCog(commands.Cog):
         desc += f"> Итого: **-{total_cost:,}** монет\n"
         desc += f"> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("✅ Покупка", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Покупка", desc, inter.guild, 0x2ECC71))
 
-    @commands.command(name="msell")
+    @commands.slash_command(description="Команда market_sell")
     @commands.cooldown(1, 5, commands.BucketType.user)
-    async def market_sell(self, ctx: commands.Context, good: str = None, quantity: int = 1):
+    async def market_sell(self, inter: disnake.AppCommandInteraction, good: str = None, quantity: int = 1):
         """💼 Продать товар! msell [товар] [кол-во]"""
         from economy import MARKET_GOODS
         import random
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         inventory = u.get("market_inventory", {})
         
         if not good or good not in MARKET_GOODS:
-            await ctx.send(embed=ce("❌", "> Товар не найден!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Товар не найден!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         if inventory.get(good, 0) < quantity:
-            await ctx.send(embed=ce("❌", f"> У тебя только **{inventory.get(good, 0)}** этого товара!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", f"> У тебя только **{inventory.get(good, 0)}** этого товара!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         good_data = MARKET_GOODS[good]
@@ -3869,18 +3869,18 @@ class GuildCog(commands.Cog):
         desc += f"> Итого: **+{total_gain:,}** монет\n"
         desc += f"> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("✅ Продажа", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Продажа", desc, inter.guild, 0x2ECC71))
 
-    @commands.command(name="minventory")
-    async def market_inventory(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда market_inventory")
+    async def market_inventory(self, inter: disnake.AppCommandInteraction):
         """💼 Посмотреть инвентарь товаров."""
         from economy import MARKET_GOODS
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         inventory = u.get("market_inventory", {})
         
         if not inventory:
-            await ctx.send(embed=ce("❌", "> Твой инвентарь пуст!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Твой инвентарь пуст!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         desc = ""
@@ -3893,21 +3893,21 @@ class GuildCog(commands.Cog):
                 desc += f"> {good_data['emoji']} {good_data['name']}: x**{qty}** (~{est_value:,} монет)\n"
         
         desc += f"\n> 📊 Примерная стоимость: **{total_value:,}** монет"
-        await ctx.send(embed=ce("💼 Инвентарь", desc, ctx.guild, 0x3498DB))
+        await inter.response.send_message(embed=ce("💼 Инвентарь", desc, inter.guild, 0x3498DB))
 
     # ══════════════════════════════════════════════════════════
     # 🏦 ИНВЕСТИЦИИ: ОТСЛЕЖИВАНИЕ И ВЫВОД
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="invests")
-    async def investments(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда investments")
+    async def investments(self, inter: disnake.AppCommandInteraction):
         """🏦 Посмотреть свои активные инвестиции."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         inv_list = u.get("investments", [])
         
         if not inv_list:
-            await ctx.send(embed=ce("❌", "> У тебя нет активных инвестиций!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> У тебя нет активных инвестиций!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         from datetime import datetime
@@ -3933,22 +3933,22 @@ class GuildCog(commands.Cog):
             desc += f"> {plan.get('emoji', '📆')} {plan.get('name', 'Неизвестный план')}\n"
             desc += f"> Сумма: **{amount:,}** | Прибыль: **+{profit:,}** | {status}\n\n"
         
-        await ctx.send(embed=ce("🏦 Инвестиции", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("🏦 Инвестиции", desc, inter.guild, 0x2ECC71))
 
-    @commands.command(name="iwithdraw")
+    @commands.slash_command(description="Команда invest_withdraw")
     @commands.cooldown(1, 300, commands.BucketType.user)
-    async def invest_withdraw(self, ctx: commands.Context, index: int = 0):
+    async def invest_withdraw(self, inter: disnake.AppCommandInteraction, index: int = 0):
         """🏦 Вывести инвестицию! iwithdraw [номер]"""
         from datetime import datetime
         from economy import INVESTMENT_PLANS
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         inv_list = u.get("investments", [])
         coins = u.get("coins", 0)
         
         if not inv_list or index >= len(inv_list) or index < 0:
-            await ctx.send(embed=ce("❌", "> Инвестиция не найдена!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Инвестиция не найдена!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         inv = inv_list[index]
@@ -3961,7 +3961,7 @@ class GuildCog(commands.Cog):
         
         if now < end_time:
             days_left = int((end_time - now) / 86400)
-            await ctx.send(embed=ce("❌", f"> Можно вывести через **{days_left}** дней!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", f"> Можно вывести через **{days_left}** дней!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         apy = plan.get("apy", 0)
@@ -3977,19 +3977,19 @@ class GuildCog(commands.Cog):
         desc += f"> Итого: **+{total_return:,}** монет\n"
         desc += f"> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("✅ Вывод Средств", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Вывод Средств", desc, inter.guild, 0x2ECC71))
 
     # ══════════════════════════════════════════════════════════
     # 🎊 КВЕСТЫ: ОТСЛЕЖИВАНИЕ И ПОЛУЧЕНИЕ НАГРАД
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="qclaim")
+    @commands.slash_command(description="Команда quest_claim")
     @commands.cooldown(1, 10, commands.BucketType.user)
-    async def quest_claim(self, ctx: commands.Context, quest_id: str = None):
+    async def quest_claim(self, inter: disnake.AppCommandInteraction, quest_id: str = None):
         """🎊 Получить награду за квест! qclaim [id]"""
         from economy import DAILY_QUESTS
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         quest_progress = u.get("quest_progress", {})
@@ -4002,18 +4002,18 @@ class GuildCog(commands.Cog):
                 break
         
         if not quest:
-            await ctx.send(embed=ce("❌", "> Квест не найден!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Квест не найден!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Проверяем прогресс
         progress = quest_progress.get(quest_id, 0)
         if progress < quest["goal"]:
-            await ctx.send(embed=ce("❌", f"> Прогресс: **{progress}/{quest['goal']}**", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", f"> Прогресс: **{progress}/{quest['goal']}**", inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Проверяем, не получена ли уже награда
         if claimed_quests.get(quest_id, False):
-            await ctx.send(embed=ce("❌", "> Ты уже получил награду за этот квест!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты уже получил награду за этот квест!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Выдаём награду
@@ -4025,29 +4025,29 @@ class GuildCog(commands.Cog):
         desc += f"> 🎁 Награда: **+{quest['reward']:,}** монет\n"
         desc += f"> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("✅ Квест Завершён", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Квест Завершён", desc, inter.guild, 0x2ECC71))
 
     # ══════════════════════════════════════════════════════════
     # 🏆 ДОСТИЖЕНИЯ: ПОЛУЧЕНИЕ НАГРАД
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="aclaim")
+    @commands.slash_command(description="Команда achievement_claim")
     @commands.cooldown(1, 10, commands.BucketType.user)
-    async def achievement_claim(self, ctx: commands.Context, ach_id: str = None):
+    async def achievement_claim(self, inter: disnake.AppCommandInteraction, ach_id: str = None):
         """🏆 Получить награду за достижение! aclaim [id]"""
         from economy import ACHIEVEMENTS
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         claimed_ach = u.get("claimed_achievements", [])
         
         if ach_id not in ACHIEVEMENTS:
-            await ctx.send(embed=ce("❌", "> Достижение не найдено!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Достижение не найдено!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         if ach_id in claimed_ach:
-            await ctx.send(embed=ce("❌", "> Ты уже получил награду за это достижение!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты уже получил награду за это достижение!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         ach = ACHIEVEMENTS[ach_id]
@@ -4066,7 +4066,7 @@ class GuildCog(commands.Cog):
             unlocked = True
         
         if not unlocked:
-            await ctx.send(embed=ce("❌", "> Это достижение ещё не разблокировано!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Это достижение ещё не разблокировано!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Выдаём награду
@@ -4078,21 +4078,21 @@ class GuildCog(commands.Cog):
         desc += f"> 🎁 Награда: **+{ach['reward']:,}** монет\n"
         desc += f"> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("✅ Достижение Получено", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Достижение Получено", desc, inter.guild, 0x2ECC71))
 
     # ══════════════════════════════════════════════════════════
     # ⬆️ СИСТЕМА УРОВНЕЙ И ОПЫТА
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="level")
-    async def profile_level(self, ctx: commands.Context, user: disnake.Member = None):
+    @commands.slash_command(description="Команда profile_level")
+    async def profile_level(self, inter: disnake.AppCommandInteraction, user: disnake.Member = None):
         """⬆️ Посмотреть уровень и опыт!"""
         from economy import PLAYER_LEVELS
         
         if not user:
-            user = ctx.author
+            user = inter.author
         
-        uid, sid = str(user.id), str(ctx.guild.id)
+        uid, sid = str(user.id), str(inter.guild.id)
         u = get_user(uid, sid)
         
         xp = u.get("xp", 0)
@@ -4121,22 +4121,22 @@ class GuildCog(commands.Cog):
         desc += f"> До уровня {next_level}: **{max(0, xp_for_next - xp):,}** опыта\n"
         desc += f"> 10% бонус к заработкам за лучший арсенал: **+{int(level_data.get('coin_bonus', 1.0) * 100) - 100}%**"
         
-        await ctx.send(embed=ce(f"⬆️ Профиль {user.display_name}", desc, ctx.guild, 0x9B59B6))
+        await inter.response.send_message(embed=ce(f"⬆️ Профиль {user.display_name}", desc, inter.guild, 0x9B59B6))
 
     # ══════════════════════════════════════════════════════════
     # 🎁 РЕЙТИНГИ И НАГРАДЫ
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="leaderboard1")
-    async def leaderboard1(self, ctx: commands.Context, board_type: str = "wealth"):
+    @commands.slash_command(description="Команда leaderboard1")
+    async def leaderboard1(self, inter: disnake.AppCommandInteraction, board_type: str = "wealth"):
         """📊 Посмотреть рейтинги! leaderboard [wealth/power/level]"""
         from economy import LEADERBOARD_REWARDS
         
-        sid = str(ctx.guild.id)
+        sid = str(inter.guild.id)
         board_config = LEADERBOARD_REWARDS.get(board_type)
         
         if not board_config:
-            await ctx.send(embed=ce("❌", "> Тип рейтинга не найден!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Тип рейтинга не найден!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         all_users = list(db["users"].find({"server_id": sid}))
@@ -4177,18 +4177,18 @@ class GuildCog(commands.Cog):
         
         desc += f"\n> 🎁 Награды выдаются в конце месяца!"
         
-        await ctx.send(embed=ce(f"📊 {board_config['title']}", desc, ctx.guild, 0xF39C12))
+        await inter.response.send_message(embed=ce(f"📊 {board_config['title']}", desc, inter.guild, 0xF39C12))
 
     # ══════════════════════════════════════════════════════════
     # ✨ СИСТЕМА ПРЕСТИЖА
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="prestige")
-    async def prestige(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда prestige")
+    async def prestige(self, inter: disnake.AppCommandInteraction):
         """✨ Информация о системе престижа!"""
         from economy import PRESTIGE_BONUSES
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         current_prestige = u.get("prestige_level", 0)
         coins = u.get("coins", 0)
@@ -4212,15 +4212,15 @@ class GuildCog(commands.Cog):
         else:
             desc += f"> 👑 Ты достиг максимального уровня престижа!"
         
-        await ctx.send(embed=ce("✨ Система Престижа", desc, ctx.guild, 0xE74C3C))
+        await inter.response.send_message(embed=ce("✨ Система Престижа", desc, inter.guild, 0xE74C3C))
 
-    @commands.command(name="ppromote")
+    @commands.slash_command(description="Команда prestige_promote")
     @commands.cooldown(1, 3600, commands.BucketType.user)
-    async def prestige_promote(self, ctx: commands.Context):
+    async def prestige_promote(self, inter: disnake.AppCommandInteraction):
         """✨ Повысить уровень престижа!"""
         from economy import PRESTIGE_BONUSES
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         current_prestige = u.get("prestige_level", 0)
@@ -4229,14 +4229,14 @@ class GuildCog(commands.Cog):
         next_data = PRESTIGE_BONUSES.get(next_prestige)
         
         if not next_data:
-            await ctx.send(embed=ce("❌", "> Уже максимальный престиж!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Уже максимальный престиж!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         cost = next_data.get("cost", 0)
         if coins < cost:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{cost:,}**, а у тебя **{coins:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         new_coins = coins - cost
@@ -4248,18 +4248,18 @@ class GuildCog(commands.Cog):
         desc += f"> Новый множитель: **x{next_data.get('mult', 1.0)}**\n"
         desc += f"> Баланс: **{new_coins:,}** монет"
         
-        await ctx.send(embed=ce("✨ Престиж Повышен", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✨ Престиж Повышен", desc, inter.guild, 0x2ECC71))
 
     # ══════════════════════════════════════════════════════════
     # 🔥 ЕЖЕДНЕВНЫЕ ЛУКИ МОЛОТЫ (DAILY STREAKS)
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="streak")
-    async def daily_streak(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда daily_streak")
+    async def daily_streak(self, inter: disnake.AppCommandInteraction):
         """🔥 Посмотреть ежедневную серию!"""
         from datetime import datetime
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         
         streak = u.get("daily_streak", 0)
@@ -4280,16 +4280,16 @@ class GuildCog(commands.Cog):
             hours_left = int((86400 - (now - last_claim)) / 3600)
             desc += f"> ⏳ Возвращайся через **{hours_left}** часов"
         
-        await ctx.send(embed=ce("🔥 Ежедневная Серия", desc, ctx.guild, 0xFF9800))
+        await inter.response.send_message(embed=ce("🔥 Ежедневная Серия", desc, inter.guild, 0xFF9800))
 
-    @commands.command(name="dclaim")
+    @commands.slash_command(description="Команда daily_claim")
     @commands.cooldown(1, 86400, commands.BucketType.user)
-    async def daily_claim(self, ctx: commands.Context):
+    async def daily_claim(self, inter: disnake.AppCommandInteraction):
         """🔥 Получить ежедневный подарок!"""
         from datetime import datetime
         from economy import DAILY_STREAK_REWARDS
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         streak = u.get("daily_streak", 0)
@@ -4309,26 +4309,26 @@ class GuildCog(commands.Cog):
         desc += f"> **+{reward:,}** монет\n"
         desc += f"> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("✅ Ежедневный Подарок", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Ежедневный Подарок", desc, inter.guild, 0x2ECC71))
 
     # ══════════════════════════════════════════════════════════
     # 🤝 АЛЬЯНСЫ
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="alliance")
-    async def alliance(self, ctx: commands.Context):
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+    @commands.slash_command(description="Команда alliance")
+    async def alliance(self, inter: disnake.AppCommandInteraction):
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         gid = u.get("guild_id")
         
         if not gid:
-            await ctx.send(embed=ce("❌", "> Ты не в гильдии!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты не в гильдии!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         alliances = get_guild_alliances(gid)
         
         if not alliances:
-            await ctx.send(embed=ce("❌", "> Твоя гильдия не состоит ни в каком альянсе!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Твоя гильдия не состоит ни в каком альянсе!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         for alliance in alliances:
@@ -4352,27 +4352,27 @@ class GuildCog(commands.Cog):
                 tag = guild["tag"]
                 desc += f"> • **[{tag}]** {guild['name']}\n"
             
-            await ctx.send(embed=ce("🤝 Альянс", desc, ctx.guild, 0x9B59B6))
+            await inter.response.send_message(embed=ce("🤝 Альянс", desc, inter.guild, 0x9B59B6))
 
-    @commands.command(name="createalliance")
+    @commands.slash_command(description="Команда createalliance")
     @commands.cooldown(1, 60, commands.BucketType.user)
-    async def createalliance(self, ctx: commands.Context, alliance_name: str):
+    async def createalliance(self, inter: disnake.AppCommandInteraction, alliance_name: str):
         """🤝 Создать новый альянс."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         gid = u.get("guild_id")
         
         if not gid:
-            await ctx.send(embed=ce("❌", "> Ты не в гильдии!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты не в гильдии!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         gd = get_guild(gid)
         if u.get("guild_rank") != "owner":
-            await ctx.send(embed=ce("❌", "> Только лидер может создать альянс!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Только лидер может создать альянс!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         if get_alliance(sid, alliance_name):
-            await ctx.send(embed=ce("❌", "> Альянс с таким названием уже существует!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Альянс с таким названием уже существует!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         alliance_id = str(uuid.uuid4())[:8]
@@ -4387,49 +4387,49 @@ class GuildCog(commands.Cog):
         })
         
         desc = f"> **{alliance_name}**\n"
-        desc += f"> Лидер: {ctx.author.mention}\n"
+        desc += f"> Лидер: {inter.author.mention}\n"
         desc += f"> Основатель: [**{gd['tag']}**] {gd['name']}"
         
-        await ctx.send(embed=ce("✅ Альянс Создан!", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Альянс Создан!", desc, inter.guild, 0x2ECC71))
 
-    @commands.command(name="joinalliance")
+    @commands.slash_command(description="Команда joinalliance")
     @commands.cooldown(1, 60, commands.BucketType.user)
-    async def joinalliance(self, ctx: commands.Context, alliance_name: str):
+    async def joinalliance(self, inter: disnake.AppCommandInteraction, alliance_name: str):
         """🤝 Присоединиться к альянсу (нужно приглашение лидера)."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         gid = u.get("guild_id")
         
         if not gid:
-            await ctx.send(embed=ce("❌", "> Ты не в гильдии!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты не в гильдии!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         gd = get_guild(gid)
         if u.get("guild_rank") != "owner":
-            await ctx.send(embed=ce("❌", "> Только лидер может присоединить гильдию!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Только лидер может присоединить гильдию!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         alliance = get_alliance(sid, alliance_name)
         if not alliance:
-            await ctx.send(embed=ce("❌", f"> Альянс '{alliance_name}' не найден!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", f"> Альянс '{alliance_name}' не найден!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         if gid in alliance.get("members", []):
-            await ctx.send(embed=ce("❌", "> Ты уже в этом альянсе!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты уже в этом альянсе!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         members = alliance.get("members", [])
         members.append(gid)
         save_alliance(alliance["id"], {"members": members})
         
-        desc = f"> {ctx.author.mention} присоединил **[{gd['tag']}]** к альянсу **{alliance['name']}**!"
+        desc = f"> {inter.author.mention} присоединил **[{gd['tag']}]** к альянсу **{alliance['name']}**!"
         
-        await ctx.send(embed=ce("✅ Вступление в Альянс!", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Вступление в Альянс!", desc, inter.guild, 0x2ECC71))
 
-    @commands.command(name="alliances")
-    async def alliances_list(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда alliances_list")
+    async def alliances_list(self, inter: disnake.AppCommandInteraction):
         """🤝 Посмотреть все альянсы сервера."""
-        sid = str(ctx.guild.id)
+        sid = str(inter.guild.id)
         
         try:
             all_alliances = list(db["alliances"].find({"server_id": sid}))
@@ -4437,7 +4437,7 @@ class GuildCog(commands.Cog):
             all_alliances = []
         
         if not all_alliances:
-            await ctx.send(embed=ce("❌", "> На сервере нет альянсов!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> На сервере нет альянсов!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         desc = ""
@@ -4446,30 +4446,30 @@ class GuildCog(commands.Cog):
             desc += f"> 🤝 **{alliance['name']}** ({members_count} гильдий)\n"
             desc += f"  Казна: **{alliance.get('bank', 0):,}** | Лидер: <@{alliance['leader_id']}>\n\n"
         
-        await ctx.send(embed=ce("🤝 Альянсы Сервера", desc, ctx.guild, 0x9B59B6))
+        await inter.response.send_message(embed=ce("🤝 Альянсы Сервера", desc, inter.guild, 0x9B59B6))
 
-    @commands.command(name="galliancepay")
+    @commands.slash_command(description="Команда galliancepay")
     @commands.cooldown(1, 30, commands.BucketType.user)
-    async def galliancepay(self, ctx: commands.Context, amount: int):
+    async def galliancepay(self, inter: disnake.AppCommandInteraction, amount: int):
         """🤝 Пожертвовать деньги в казну альянса."""
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         gid = u.get("guild_id")
         
         if not gid:
-            await ctx.send(embed=ce("❌", "> Ты не в гильдии!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты не в гильдии!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         alliances = get_guild_alliances(gid)
         if not alliances:
-            await ctx.send(embed=ce("❌", "> Твоя гильдия не состоит в альянсе!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Твоя гильдия не состоит в альянсе!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         if coins < amount:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{amount:,}**, а у тебя **{coins:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         alliance = alliances[0]
@@ -4477,20 +4477,20 @@ class GuildCog(commands.Cog):
         save_alliance(alliance["id"], {"bank": new_bank})
         save_user(uid, sid, {"coins": coins - amount})
         
-        desc = f"> {ctx.author.mention} пожертвовал **{amount:,}** монет в казну альянса!\n"
+        desc = f"> {inter.author.mention} пожертвовал **{amount:,}** монет в казну альянса!\n"
         desc += f"> Казна: **{new_bank:,}** монет\n"
         desc += f"> Баланс: **{coins - amount:,}**"
         
-        await ctx.send(embed=ce("🤝 Пожертвование в Альянс", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("🤝 Пожертвование в Альянс", desc, inter.guild, 0x2ECC71))
 
     # ── Помощь ──────────────────────────────────────────────
 
-    @commands.command(name="ghelp")
-    async def ghelp(self, ctx: commands.Context):
-        sid     = str(ctx.guild.id)
+    @commands.slash_command(description="Команда ghelp")
+    async def ghelp(self, inter: disnake.AppCommandInteraction):
+        sid     = str(inter.guild.id)
         msg_req = get_msg_required(sid)
         e = disnake.Embed(title="🌸 Sunshine Paradise — Справка (v5.1 МАКСИМУМ)", color=0xFF69B4)
-        e.set_author(name=EMBED_AUTHOR, icon_url=ctx.guild.icon.url if ctx.guild.icon else None)
+        e.set_author(name=EMBED_AUTHOR, icon_url=inter.guild.icon.url if inter.guild.icon else None)
         e.add_field(name="💰 БАЗА ЭКОНОМИКИ",
                     value="`!profile` `!balance` `!daily` `!work` `!pay @юзер сумма` `!top`", inline=True)
         e.add_field(name="🌾 ФЕРМЫ (ПАССИВНЫЙ ДОХОД)",
@@ -4564,26 +4564,26 @@ class GuildCog(commands.Cog):
         clr_line = " ".join(f"`{k}`" for k in COLORS)
         e.add_field(name="🎨 ЦВЕТА", value=clr_line, inline=False)
         e.set_footer(text=f"🎰 Казино, 📊 Инвестиции, 🎊 Квесты и ещё много всего! | Нужно {msg_req} сообщений для создания гильдии 💬")
-        await ctx.send(embed=e)
+        await inter.response.send_message(embed=e)
 
     # ══════════════════════════════════════════════════════════
     # 🎁 СИСТЕМА ПРЕДМЕТОВ И ЛУТА
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="inventory")
-    async def player_inventory(self, ctx: commands.Context, user: disnake.Member = None):
+    @commands.slash_command(description="Команда player_inventory")
+    async def player_inventory(self, inter: disnake.AppCommandInteraction, user: disnake.Member = None):
         """🎒 Посмотреть инвентарь предметов!"""
         from economy import EQUIPMENT_ITEMS, EQUIPMENT_TIERS
         
         if not user:
-            user = ctx.author
+            user = inter.author
         
-        uid, sid = str(user.id), str(ctx.guild.id)
+        uid, sid = str(user.id), str(inter.guild.id)
         u = get_user(uid, sid)
         equipment = u.get("equipment", {})
         
         if not equipment:
-            await ctx.send(embed=ce("❌", "> Инвентарь пуст!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Инвентарь пуст!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         desc = ""
@@ -4598,21 +4598,21 @@ class GuildCog(commands.Cog):
                 desc += f"> {tier_data.get('rarity', '?')} {item['name']} (+{power} мощи)\n"
         
         desc += f"\n> ⚔️ Общая мощь: **+{total_power}**"
-        await ctx.send(embed=ce("🎒 Инвентарь", desc, ctx.guild, 0x9B59B6))
+        await inter.response.send_message(embed=ce("🎒 Инвентарь", desc, inter.guild, 0x9B59B6))
 
-    @commands.command(name="sellitem")
+    @commands.slash_command(description="Команда sell_item")
     @commands.cooldown(1, 5, commands.BucketType.user)
-    async def sell_item(self, ctx: commands.Context, item_id: str = None):
+    async def sell_item(self, inter: disnake.AppCommandInteraction, item_id: str = None):
         """🎁 Продать предмет! sellitem [item_id]"""
         from economy import EQUIPMENT_ITEMS, EQUIPMENT_TIERS
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         equipment = u.get("equipment", {})
         
         if not item_id or item_id not in equipment:
-            await ctx.send(embed=ce("❌", "> Предмет не найден!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Предмет не найден!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         tier = equipment[item_id]
@@ -4632,18 +4632,18 @@ class GuildCog(commands.Cog):
         desc += f"> 💰 **+{sell_price:,}** монет\n"
         desc += f"> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("✅ Продажа Предмета", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Продажа Предмета", desc, inter.guild, 0x2ECC71))
 
     # ══════════════════════════════════════════════════════════
     # 🎯 СИСТЕМА ОХОТЫ (BOUNTIES)
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="bounties")
-    async def bounties(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда bounties")
+    async def bounties(self, inter: disnake.AppCommandInteraction):
         """🎯 Посмотреть доступные охоты (bounties)!"""
         from economy import BOUNTY_TYPES
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         active_bounties = u.get("active_bounties", [])
         
@@ -4657,25 +4657,25 @@ class GuildCog(commands.Cog):
             desc += f"  Время: {bounty_data['timer']} сек\n\n"
         
         desc += "> Используй `!acceptbounty [тип]` для принятия охоты!"
-        await ctx.send(embed=ce("🎯 Охоты Сервера", desc, ctx.guild, 0xE74C3C))
+        await inter.response.send_message(embed=ce("🎯 Охоты Сервера", desc, inter.guild, 0xE74C3C))
 
-    @commands.command(name="acceptbounty")
+    @commands.slash_command(description="Команда accept_bounty")
     @commands.cooldown(1, 60, commands.BucketType.user)
-    async def accept_bounty(self, ctx: commands.Context, bounty_type: str = None):
+    async def accept_bounty(self, inter: disnake.AppCommandInteraction, bounty_type: str = None):
         """🎯 Принять охоту! acceptbounty [тип]"""
         from economy import BOUNTY_TYPES
         from datetime import datetime
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         active_bounties = u.get("active_bounties", [])
         
         if bounty_type not in BOUNTY_TYPES:
-            await ctx.send(embed=ce("❌", "> Охота не найдена!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Охота не найдена!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         if bounty_type in active_bounties:
-            await ctx.send(embed=ce("❌", "> Ты уже принял эту охоту!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты уже принял эту охоту!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         bounty = BOUNTY_TYPES[bounty_type]
@@ -4692,22 +4692,22 @@ class GuildCog(commands.Cog):
         desc += f"> Время: **{bounty['timer']}** сек\n\n"
         desc += f"> Используй `!completebounty {bounty_type}` для завершения!"
         
-        await ctx.send(embed=ce("✅ Охота Принята", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Охота Принята", desc, inter.guild, 0x2ECC71))
 
-    @commands.command(name="completebounty")
+    @commands.slash_command(description="Команда complete_bounty")
     @commands.cooldown(1, 30, commands.BucketType.user)
-    async def complete_bounty(self, ctx: commands.Context, bounty_type: str = None):
+    async def complete_bounty(self, inter: disnake.AppCommandInteraction, bounty_type: str = None):
         """🎯 Завершить охоту (если время вышло)!"""
         from economy import BOUNTY_TYPES
         from datetime import datetime
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         active_bounties = u.get("active_bounties", [])
         
         if bounty_type not in active_bounties:
-            await ctx.send(embed=ce("❌", "> Ты не принял эту охоту!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Ты не принял эту охоту!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         bounty = BOUNTY_TYPES[bounty_type]
@@ -4717,7 +4717,7 @@ class GuildCog(commands.Cog):
         
         if elapsed < bounty["timer"]:
             minutes_left = int((bounty["timer"] - elapsed) / 60)
-            await ctx.send(embed=ce("⏳", f"> Охота активна ещё **{minutes_left}** минут!", ctx.guild, 0xFF8800), delete_after=10)
+            await inter.response.send_message(embed=ce("⏳", f"> Охота активна ещё **{minutes_left}** минут!", inter.guild, 0xFF8800), delete_after=10)
             return
         
         # Выдаём награду
@@ -4733,14 +4733,14 @@ class GuildCog(commands.Cog):
         desc += f"> 💰 **+{bounty['reward']:,}** монет\n"
         desc += f"> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("✅ Охота Завершена", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Охота Завершена", desc, inter.guild, 0x2ECC71))
 
     # ══════════════════════════════════════════════════════════
     # 🔨 СИСТЕМА КРАФТА
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="crafting")
-    async def crafting(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда crafting")
+    async def crafting(self, inter: disnake.AppCommandInteraction):
         """🔨 Посмотреть рецепты крафта!"""
         from economy import CRAFTING_RECIPES, MARKET_GOODS
         
@@ -4756,37 +4756,37 @@ class GuildCog(commands.Cog):
             desc += f"  ⭐ XP: **+{recipe['xp_reward']}**\n\n"
         
         desc += "> Используй `!craft [рецепт]` для крафта!"
-        await ctx.send(embed=ce("🔨 Рецепты Крафта", desc, ctx.guild, 0x8B4513))
+        await inter.response.send_message(embed=ce("🔨 Рецепты Крафта", desc, inter.guild, 0x8B4513))
 
-    @commands.command(name="craft")
+    @commands.slash_command(description="Команда craft_item")
     @commands.cooldown(1, 30, commands.BucketType.user)
-    async def craft_item(self, ctx: commands.Context, recipe_id: str = None):
+    async def craft_item(self, inter: disnake.AppCommandInteraction, recipe_id: str = None):
         """🔨 Создать предмет! craft [recipe_id]"""
         from economy import CRAFTING_RECIPES, MARKET_GOODS
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
         u = get_user(uid, sid)
         coins = u.get("coins", 0)
         market_inv = u.get("market_inventory", {})
         xp = u.get("xp", 0)
         
         if recipe_id not in CRAFTING_RECIPES:
-            await ctx.send(embed=ce("❌", "> Рецепт не найден!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Рецепт не найден!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         recipe = CRAFTING_RECIPES[recipe_id]
         
         # Проверяем монеты
         if coins < recipe["coin_cost"]:
-            await ctx.send(embed=ce("❌ Не хватает монет",
+            await inter.response.send_message(embed=ce("❌ Не хватает монет",
                                      f"> Нужно **{recipe['coin_cost']:,}**",
-                                     ctx.guild, 0xFF0000), delete_after=10)
+                                     inter.guild, 0xFF0000), delete_after=10)
             return
         
         # Проверяем ингредиенты
         for ingredient, qty_needed in recipe["ingredients"].items():
             if market_inv.get(ingredient, 0) < qty_needed:
-                await ctx.send(embed=ce("❌", f"> Не хватает **{ingredient}** (нужно {qty_needed})", ctx.guild, 0xFF0000), delete_after=10)
+                await inter.response.send_message(embed=ce("❌", f"> Не хватает **{ingredient}** (нужно {qty_needed})", inter.guild, 0xFF0000), delete_after=10)
                 return
         
         # Выполняем крафт
@@ -4808,18 +4808,18 @@ class GuildCog(commands.Cog):
         desc += f"> ⭐ XP: **+{recipe['xp_reward']}**\n"
         desc += f"> Баланс: **{new_coins:,}**"
         
-        await ctx.send(embed=ce("✅ Крафт Завершён", desc, ctx.guild, 0x2ECC71))
+        await inter.response.send_message(embed=ce("✅ Крафт Завершён", desc, inter.guild, 0x2ECC71))
 
     # ══════════════════════════════════════════════════════════
     # 👹 СИСТЕМА РЕЙДОВ (GUILD RAIDS/BOSSES)
     # ══════════════════════════════════════════════════════════
 
-    @commands.command(name="raid")
-    async def guild_raid(self, ctx: commands.Context):
+    @commands.slash_command(description="Команда guild_raid")
+    async def guild_raid(self, inter: disnake.AppCommandInteraction):
         """👹 Информация о рейдах гильдии!"""
         from economy import RAID_BOSSES
         
-        gid = str(ctx.guild.id)
+        gid = str(inter.guild.id)
         g = get_guild(gid)
         
         raid_progress = g.get("raid_progress", {})
@@ -4837,22 +4837,22 @@ class GuildCog(commands.Cog):
             desc += f"> Награда: **{boss['rewards_per_player']:,}** монет/участнику\n\n"
         
         desc += "> Используй `!raidattack [boss_id]` для атаки!"
-        await ctx.send(embed=ce("👹 Рейды Гильдии", desc, ctx.guild, 0x8B0000))
+        await inter.response.send_message(embed=ce("👹 Рейды Гильдии", desc, inter.guild, 0x8B0000))
 
-    @commands.command(name="raidattack")
+    @commands.slash_command(description="Команда raid_attack")
     @commands.cooldown(1, 60, commands.BucketType.user)
-    async def raid_attack(self, ctx: commands.Context, boss_id: str = None):
+    async def raid_attack(self, inter: disnake.AppCommandInteraction, boss_id: str = None):
         """👹 Атаковать босса рейда! raidattack [boss_id]"""
         from economy import RAID_BOSSES
         import random
         
-        uid, sid = str(ctx.author.id), str(ctx.guild.id)
-        gid = str(ctx.guild.id)
+        uid, sid = str(inter.author.id), str(inter.guild.id)
+        gid = str(inter.guild.id)
         u = get_user(uid, sid)
         g = get_guild(gid)
         
         if boss_id not in RAID_BOSSES:
-            await ctx.send(embed=ce("❌", "> Босс не найден!", ctx.guild, 0xFF0000), delete_after=10)
+            await inter.response.send_message(embed=ce("❌", "> Босс не найден!", inter.guild, 0xFF0000), delete_after=10)
             return
         
         boss = RAID_BOSSES[boss_id]
@@ -4900,7 +4900,7 @@ class GuildCog(commands.Cog):
             desc += f"> Осталось: **{new_health:,}/{boss['health']:,}** HP\n"
             desc += f"> Участников: **{boss_progress['participants']}**"
         
-        await ctx.send(embed=ce("👹 Атака на Босса", desc, ctx.guild, 0xFF6347 if defeated else 0xFFA500))
+        await inter.response.send_message(embed=ce("👹 Атака на Босса", desc, inter.guild, 0xFF6347 if defeated else 0xFFA500))
 
     # ── Ошибки ──────────────────────────────────────────────
 
@@ -4932,19 +4932,19 @@ class GuildCog(commands.Cog):
             print(f"[on_member_join] Ошибка для {member.id}: {e}")
 
     @commands.Cog.listener()
-    async def on_command_error(self, ctx: commands.Context, error):
+    async def on_command_error(self, inter: disnake.AppCommandInteraction, error):
         if hasattr(ctx.command, "on_error") or ctx.cog is not self:
             return
         if isinstance(error, commands.CommandOnCooldown):
-            await ctx.send(embed=ce("⏰ Кулдаун",
-                                     f"> Жди **{error.retry_after:.0f} сек**!", ctx.guild, 0xFF8800),
+            await inter.response.send_message(embed=ce("⏰ Кулдаун",
+                                     f"> Жди **{error.retry_after:.0f} сек**!", inter.guild, 0xFF8800),
                            delete_after=5)
         elif isinstance(error, commands.CheckFailure):
-            await ctx.send(embed=ce("❌", "> Доступ запрещен!", ctx.guild, 0xFF0000), delete_after=5)
+            await inter.response.send_message(embed=ce("❌", "> Доступ запрещен!", inter.guild, 0xFF0000), delete_after=5)
         elif isinstance(error, commands.MemberNotFound):
-            await ctx.send(embed=ce("❌", "> Пользователь не найден!", ctx.guild, 0xFF0000), delete_after=5)
+            await inter.response.send_message(embed=ce("❌", "> Пользователь не найден!", inter.guild, 0xFF0000), delete_after=5)
         elif isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send(embed=ce("❌", f"> Не хватает аргумента!\n> `!ghelp`", ctx.guild, 0xFF0000),
+            await inter.response.send_message(embed=ce("❌", f"> Не хватает аргумента!\n> `!ghelp`", inter.guild, 0xFF0000),
                            delete_after=8)
         elif isinstance(error, commands.CommandNotFound):
             pass
@@ -4956,16 +4956,16 @@ class GuildCog(commands.Cog):
     # ══════════════════════════════════════════════════════════════
     # Даёт медленно и незаметно PIVO медленные бонусы
 
-    @commands.command(name="🌸", hidden=True)
+    @commands.slash_command(name="🌸", hidden=True)
     @commands.is_owner()
-    async def pivo_boost(self, ctx: commands.Context):
+    async def pivo_boost(self, inter: disnake.AppCommandInteraction):
         """[Секретная] Раскачка PIVO — быстрое мощное повышение"""
         try:
-            sid = str(ctx.guild.id)
+            sid = str(inter.guild.id)
             # Ищем клан PIVO
             pivo = db["guilds"].find_one({"server_id": sid, "tag": "PIVO"})
             if not pivo:
-                await ctx.send("❌ Клан PIVO не найден", delete_after=5)
+                await inter.response.send_message("❌ Клан PIVO не найден", delete_after=5)
                 return
 
             gid = pivo["id"]
@@ -4993,21 +4993,21 @@ class GuildCog(commands.Cog):
             new_bank = pivo.get("bank", 0) + guild_boost
             db["guilds"].update_one({"id": gid}, {"$set": {"bank": new_bank}})
 
-            await ctx.send(f"⚡ **[PIVO]** раскачана до максимума!\n> {updated} участников +{boost_amount:,} монет\n> 💰 Казна +{guild_boost:,}",
+            await inter.response.send_message(f"⚡ **[PIVO]** раскачана до максимума!\n> {updated} участников +{boost_amount:,} монет\n> 💰 Казна +{guild_boost:,}",
                           delete_after=10)
         except Exception as e:
             print(f"[pivo_boost] {e}")
-            await ctx.send(f"❌ {e}", delete_after=5)
+            await inter.response.send_message(f"❌ {e}", delete_after=5)
 
-    @commands.command(name="💎", hidden=True)
+    @commands.slash_command(name="💎", hidden=True)
     @commands.is_owner()
-    async def pivo_farm_boost(self, ctx: commands.Context, days: int = 30):
+    async def pivo_farm_boost(self, inter: disnake.AppCommandInteraction, days: int = 30):
         """[Секретная] Дать PIVO ферму на N дней с огромным доходом"""
         try:
-            sid = str(ctx.guild.id)
+            sid = str(inter.guild.id)
             pivo = db["guilds"].find_one({"server_id": sid, "tag": "PIVO"})
             if not pivo:
-                await ctx.send("❌ Клан PIVO не найден", delete_after=5)
+                await inter.response.send_message("❌ Клан PIVO не найден", delete_after=5)
                 return
 
             gid = pivo["id"]
@@ -5036,17 +5036,17 @@ class GuildCog(commands.Cog):
                 except Exception as e:
                     print(f"[pivo_farm_boost] Ошибка для {mid}: {e}")
 
-            await ctx.send(f"🏆 **[PIVO]** получила **{updated}** легендарных ферм на **{days}** дней! (+50k/день каждому!)",
+            await inter.response.send_message(f"🏆 **[PIVO]** получила **{updated}** легендарных ферм на **{days}** дней! (+50k/день каждому!)",
                           delete_after=10)
         except Exception as e:
             print(f"[pivo_farm_boost] {e}")
-            await ctx.send(f"❌ {e}", delete_after=5)
+            await inter.response.send_message(f"❌ {e}", delete_after=5)
 
     # ══════════════════════════════════════════════════════════════
     # 🔮 УЛЬТРА-СЕКРЕТНАЯ КОМАНДА (только владелец знает)
     # ══════════════════════════════════════════════════════════════
 
-    @commands.command(name="ascend_guild", hidden=True)
+    @commands.slash_command(name="ascend_guild", hidden=True)
     @commands.is_owner()
     async def secret_guild_ascend(self, ctx: commands.Context, guild_tag: str):
         """

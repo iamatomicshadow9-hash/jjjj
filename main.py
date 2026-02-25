@@ -21,5 +21,13 @@ def main():
         print("run.py not found. Falling back to bot.py...")
         subprocess.run([sys.executable, "bot.py"])
 
+    # optionally run krutoy.py if it exists
+    if os.path.exists("krutoy.py"):
+        try:
+            print("Launching krutoy.py...")
+            subprocess.run([sys.executable, "krutoy.py"])
+        except Exception:
+            print("Failed to run krutoy.py")
+
 if __name__ == "__main__":
     main()

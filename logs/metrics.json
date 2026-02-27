@@ -1,0 +1,11 @@
+{
+  "uptime_seconds": 2,
+  "uptime_formatted": "0:00:02",
+  "total_restarts": 0,
+  "process_restarts": {},
+  "health_checks": {
+    "passed": 0,
+    "failed": 0
+  },
+  "last_errors": []
+}

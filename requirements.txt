@@ -1,0 +1,9 @@
+disnake
+python-dotenv
+psutil
+Flask
+aiohttp
+pymongo
+pymongo[srv]
+Pillow
+requests

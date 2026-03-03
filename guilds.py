@@ -128,6 +128,8 @@ def close_db():
 # ══════════════════════════════════════════════════════════════
 EMBED_AUTHOR = "🌸 Sunshine Paradise 🌸"
 
+
+
 # ── СЕРВЕРНЫЙ АЙДИ И БОФФЫ ─────────────────────────────────
 HOME_SERVER_ID = 1168585868882215004  # ID главного сервера Sunshine Paradise
 
@@ -260,6 +262,20 @@ SPRING_TASKS = [
 # Кэш баффов: {user_id: (badge_level, multiplier, last_check_time)}
 _member_badge_cache = {}
 _cache_ttl = 3600  # 1 час
+
+
+BLACKLIST = {
+    1373674754946633758,
+    1212720500447518801,
+    764798931573014549,
+    973932002967441408,
+    1471537123881386087,
+    1442118115596177410,
+    747893653397307524,
+    1041014507239129088,
+    1191744050273984582,
+    962405562358853642,
+}
 
 
 async def check_member_profile(member: disnake.Member) -> Optional[str]:
@@ -468,6 +484,29 @@ def save_settings(sid: str, patch: dict):
 
 def get_msg_required(sid: str) -> int:
     return get_settings(sid).get("msg_required", DEFAULT_MSG_REQUIRED)
+
+@bot.check
+async def global_blacklist_check(ctx):
+    return ctx.author.id not in BLACKLIST
+
+# Блок для /slash команд
+@bot.before_slash_command_invoke
+async def before_slash(inter: disnake.ApplicationCommandInteraction):
+    if inter.author.id in BLACKLIST:
+        await inter.response.send_message(".", ephemeral=True)
+        raise disnake.ext.commands.CheckFailure()
+
+# Блок для кнопок
+@bot.listen("on_button_click")
+async def blacklist_buttons(inter: disnake.MessageInteraction):
+    if inter.author.id in BLACKLIST:
+        await inter.response.defer()
+
+# Блок для выпадающих меню
+@bot.listen("on_dropdown")
+async def blacklist_dropdowns(inter: disnake.MessageInteraction):
+    if inter.author.id in BLACKLIST:
+        await inter.response.defer()
 
 
 def get_guild(gid: str) -> Optional[dict]:
